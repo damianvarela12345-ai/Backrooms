@@ -1,0 +1,13 @@
+# Exported from Render on 2026-01-31T05:09:43Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: BackroomsVisualscape
+      runtime: static
+      repo: https://github.com/damianvarela12345-ai/Backrooms
+      staticPublishPath: .
+      autoDeployTrigger: commit
