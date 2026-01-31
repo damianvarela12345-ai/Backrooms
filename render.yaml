@@ -6,13 +6,6 @@ projects:
   - name: Production
     services:
     - type: web
-      name: BackroomsVisualscape
-      runtime: static
-      repo: https://github.com/damianvarela12345-ai/Backrooms
-      staticPublishPath: build
-      autoDeployTrigger: commit
-
-    - type: web
       name: BackroomsWS
       runtime: node
       repo: https://github.com/damianvarela12345-ai/Backrooms
