@@ -201,6 +201,11 @@
             </select>
         </div>
 
+        <div class="setting-row">
+            <label>SERVER HOST (optional)</label>
+            <input id="mp-server" type="text" placeholder="e.g. ws.backrooms.visualscape.com or wss://... (leave blank to use current host)" />
+        </div>
+
         <div class="mp-row">
             <button class="small" id="mp-back">BACK</button>
             <button class="small" id="mp-start">ENTER ROOM</button>
@@ -1130,6 +1135,20 @@ document.addEventListener('pointerlockchange', () => {
    Multiplayer connect
    ========================== */
 function wsUrl() {
+    // Priority: explicit global override -> mp-server input value -> current host
+    try {
+        const globalOverride = (typeof window.WS_HOST !== 'undefined' && window.WS_HOST) ? window.WS_HOST : '';
+        const input = document.getElementById('mp-server');
+        const inputOverride = input ? input.value.trim() : '';
+        const override = globalOverride || inputOverride;
+        if (override) {
+            // If scheme present, use it; otherwise assume wss/ws based on page protocol
+            if (/^wss?:\/\//i.test(override)) return override;
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${proto}//${override}`;
+        }
+    } catch (e) { /* ignore DOM issues */ }
+
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${location.host}`;
 }

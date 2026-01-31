@@ -1,0 +1,12 @@
+{
+  "name": "backrooms-ws",
+  "version": "0.1.0",
+  "description": "Simple WebSocket server for Backrooms Visualscape",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.0"
+  }
+}

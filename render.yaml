@@ -11,3 +11,11 @@ projects:
       repo: https://github.com/damianvarela12345-ai/Backrooms
       staticPublishPath: .
       autoDeployTrigger: commit
+
+    - type: web
+      name: BackroomsWS
+      runtime: node
+      repo: https://github.com/damianvarela12345-ai/Backrooms
+      buildCommand: cd server && npm install
+      startCommand: node server/index.js
+      autoDeployTrigger: commit
