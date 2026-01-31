@@ -1,13 +1,2477 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Backrooms - Visualscape (Build)</title>
-  <style>html,body{height:100%;margin:0}</style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Backrooms — Visualscape</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <style>
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+        body { color: #e0d68d; font-family: monospace; user-select: none; }
+        canvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
+
+        #blocker, #death-screen, #win-screen, #pause-menu, #mp-menu, #sp-menu {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.9);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        #death-screen, #win-screen, #pause-menu, #mp-menu, #sp-menu { display: none; flex-direction: column; z-index: 2000; }
+        #blocker { background: #000; display: flex; flex-direction: column; }
+
+        .ui-box {
+            border: 2px solid #888800; padding: 30px; text-align: left;
+            background: #111; box-shadow: 0 0 20px rgba(136, 136, 0, 0.2); width: 450px;
+        }
+        .control-row { display: flex; justify-content: space-between; margin: 5px 0; font-size: 0.9rem; border-bottom: 1px solid rgba(136, 136, 0, 0.2); padding-bottom: 2px; }
+        .key { color: #fff; font-weight: bold; }
+        .tip-box { margin-top: 20px; padding: 10px; border: 1px dashed #888800; background: rgba(136, 136, 0, 0.05); }
+        .setting-row { margin: 15px 0; display: flex; flex-direction: column; }
+        .setting-row label { font-size: 0.8rem; margin-bottom: 5px; color: #888800; }
+        input[type=range] { cursor: pointer; accent-color: #888800; }
+
+        input[type=text], select {
+            padding: 10px; background: #0b0b0b; color: #e0d68d; border: 1px solid #444400;
+            font-family: monospace; outline: none;
+        }
+
+        button {
+            width: 100%; background: transparent; color: inherit; border: 1px solid; padding: 15px 30px;
+            cursor: pointer; margin-top: 20px; font-family: inherit; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px;
+        }
+        button:hover { background: #e0d68d; color: #000; }
+        button#nightmare-btn { border-color: #ff0000; color: #ff8888; }
+        button#nightmare-btn:hover { background: #ff0000; color: #000; }
+        button#multiplayer-btn { border-color: #00c8ff; color: #88eaff; }
+        button#multiplayer-btn:hover { background: #00c8ff; color: #000; }
+        button.small { padding: 12px 16px; font-size: 0.95rem; letter-spacing: 1px; }
+
+        /* OVERLAYS */
+        #vhs-filter { position: fixed; inset: 0; pointer-events: none; z-index: 99;
+            background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.08) 50%);
+            background-size: 100% 3px; opacity: 0.18; }
+        #noise-layer { position: fixed; inset: 0; pointer-events: none; z-index: 98; opacity: 0.08; mix-blend-mode: normal; }
+        #hud { position: absolute; top: 30px; left: 30px; font-weight: bold; color: rgba(255, 255, 170, 0.8); z-index: 100; pointer-events: none; text-shadow: 2px 2px #000; font-size: 1.2rem; }
+        #stamina-bar { width: 250px; height: 12px; border: 1px solid #ffffaa; margin-top: 8px; background: rgba(0,0,0,0.5); }
+        #stamina-fill { width: 100%; height: 100%; background: #ffffaa; transition: width 0.1s; }
+        #nv-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 90;
+            background: rgba(255, 255, 255, 0.08); display: none; mix-blend-mode: screen;
+            border: 20px solid rgba(0,0,0,0.35); }
+        #vignette-base { position: fixed; inset: 0; pointer-events: none; z-index: 60; background: radial-gradient(circle, transparent 30%, rgba(0,0,0,0.85) 155%); }
+        #vignette-run { position: fixed; inset: 0; pointer-events: none; z-index: 61; background: radial-gradient(circle, transparent 20%, rgba(180,0,0,0.4) 150%); opacity: 0; transition: opacity 0.3s; }
+        #eye-adapt { position: fixed; inset: 0; pointer-events: none; z-index: 59; background: rgba(0,0,0,0); transition: background 0.2s; mix-blend-mode: multiply; }
+        #sanity-glitch { position: fixed; inset: 0; pointer-events: none; z-index: 62; background: rgba(255,255,255,0); transition: background 0.05s; }
+        #red-flash-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 85; background: rgba(255,0,0,0); transition: background 0.1s ease-in-out; }
+        #calm-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 84; background: rgba(0,50,100,0); transition: background 0.5s; }
+        #fake-silhouette { position: fixed; width: 300px; height: 600px; background: radial-gradient(ellipse at center, rgba(0,0,0,0.8) 20%, transparent 60%); pointer-events: none; opacity: 0; z-index: 70; transition: opacity 0.4s; }
+        #nightmare-tint { position: fixed; inset: 0; pointer-events: none; z-index: 63; background: rgba(100,0,0,0.15); display: none; }
+
+        #bottom-message { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 1.8rem; color: rgba(255, 0, 0, 0.8); text-shadow: 0 0 10px rgba(255, 0, 0, 0.5); font-weight: bold; z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
+
+        @keyframes glitch-shake {
+            0% { transform: translate(0); }
+            20% { transform: translate(-15px, 15px); filter: contrast(3) invert(1); }
+            40% { transform: translate(15px, -15px); filter: contrast(6) grayscale(1); }
+            60% { transform: translate(-15px, 15px); filter: brightness(2) contrast(2); }
+            100% { transform: translate(0); }
+        }
+        .canvas-glitch { animation: glitch-shake 0.1s infinite; }
+
+        #ghost-overlay {
+            position: absolute; top: 50%; left: 50%; width: 600px; height: 800px;
+            background: radial-gradient(ellipse at center, rgba(255,255,255,0.2) 0%, rgba(0,0,0,0) 70%);
+            transform: translate(-50%, -50%); z-index: 1900; pointer-events: none; opacity: 0; transition: opacity 0.5s, transform 20s linear;
+        }
+        #retinal-burn { position: fixed; inset: 0; background: white; z-index: 3000; opacity: 0; pointer-events: none; }
+
+        /* Multiplayer menu */
+        .mp-row { display: flex; gap: 12px; margin-top: 10px; }
+        .mp-row > * { flex: 1; }
+        .mp-help { font-size: 0.8rem; color: #888800; margin-top: 10px; line-height: 1.4; }
+    </style>
 </head>
 <body>
-  <!-- Minimal forwarding index to the app (copied from repo root) -->
-  <iframe src="/index.html" style="position:fixed;inset:0;border:0;width:100%;height:100%;"></iframe>
+<canvas id="noise-layer"></canvas>
+<div id="vhs-filter"></div>
+<div id="nv-overlay"></div>
+<div id="vignette-base"></div>
+<div id="vignette-run"></div>
+<div id="eye-adapt"></div>
+<div id="sanity-glitch"></div>
+<div id="red-flash-overlay"></div>
+<div id="calm-overlay"></div>
+<div id="fake-silhouette"></div>
+<div id="ghost-overlay"></div>
+<div id="retinal-burn"></div>
+<div id="nightmare-tint"></div>
+
+<div id="blocker">
+    <div class="ui-box">
+        <h1 style="text-align: center; margin-top: 0;">Backrooms - Visualscape</h1>
+        <p style="color: #888800; font-size: 0.8rem; margin-bottom: 20px;">v1.5.0</p>
+
+        <div class="control-list">
+            <div class="control-row"><span>MOVEMENT</span> <span class="key">WASD</span></div>
+            <div class="control-row"><span>SPRINT</span> <span class="key">SHIFT</span></div>
+            <div class="control-row"><span>CROUCH (TOGGLE)</span> <span class="key">C</span></div>
+            <div class="control-row"><span>NIGHT VISION</span> <span class="key">N</span></div>
+            <div class="control-row"><span>FLASHLIGHT</span> <span class="key">F</span></div>
+            <div class="control-row"><span>MENU / UNLOCK</span> <span class="key">ESC</span></div>
+        </div>
+
+        <div class="tip-box">
+            <span style="font-weight: bold; color: #ff0000;">SURVIVAL INTEL:</span><br>
+            <span id="strategy-tip">Initializing...</span>
+        </div>
+
+        <button id="quick-start-btn">SINGLEPLAYER</button>
+        <button id="multiplayer-btn">MULTIPLAYER</button>
+    </div>
+</div>
+
+<div id="sp-menu">
+    <div class="ui-box">
+        <h2 style="margin-top:0; border-bottom: 1px solid #888800;">SINGLEPLAYER</h2>
+
+        <div class="setting-row">
+            <label>MODE</label>
+            <select id="sp-mode">
+                <option value="normal" selected>Normal</option>
+                <option value="nightmare">Nightmare</option>
+                <option value="custom">Custom</option>
+                <option value="random">Random</option>
+            </select>
+        </div>
+
+        <div id="sp-custom-block" style="display:none;">
+            <div class="setting-row">
+                <label>BOTTLES REQUIRED (1–5)</label>
+                <select id="sp-bottles">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
+            </div>
+
+            <div class="setting-row">
+                <label>RESOURCE MODE</label>
+                <select id="sp-resources">
+                    <option value="standard" selected>Normal</option>
+                    <option value="increased">Increased Resources</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="mp-row">
+            <button class="small" id="sp-back">BACK</button>
+            <button class="small" id="sp-start">START</button>
+        </div>
+
+        <div class="mp-help" id="sp-help">
+            Random = bottles 1–5 + random resource mode (normal/increased).
+        </div>
+    </div>
+</div>
+
+<div id="mp-menu">
+    <div class="ui-box">
+        <h2 style="margin-top:0; border-bottom: 1px solid #888800;">MULTIPLAYER</h2>
+
+        <div class="setting-row">
+            <label>ROOM CODE (CREATE/JOIN)</label>
+            <input id="mp-room" type="text" maxlength="16" placeholder="e.g. LOBBY1" />
+        </div>
+
+        <div class="setting-row">
+            <label>MODE</label>
+            <select id="mp-mode">
+                <option value="normal" selected>Normal</option>
+                <option value="nightmare">Nightmare</option>
+            </select>
+        </div>
+
+        <div class="setting-row" id="mp-waters-row">
+            <label>ALMOND WATERS REQUIRED (NORMAL ONLY)</label>
+            <select id="mp-waters">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3 (Default)</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+            </select>
+        </div>
+
+        <div class="mp-row">
+            <button class="small" id="mp-back">BACK</button>
+            <button class="small" id="mp-start">ENTER ROOM</button>
+        </div>
+
+        <div class="mp-help">
+            Server-authoritative: entities + physical events + pickups/win.<br>
+            Deterministic: maze + bottle positions from the room seed.
+        </div>
+
+        <div class="mp-help" id="mp-status" style="color:#88eaff;"></div>
+    </div>
+</div>
+
+<div id="pause-menu">
+    <div class="ui-box">
+        <h2 style="margin-top:0; border-bottom: 1px solid #888800;">FEED PAUSED</h2>
+        <div class="setting-row"><label>VHS NOISE INTENSITY</label><input type="range" id="vhs-slider" min="0.02" max="0.3" step="0.01" value="0.08" /></div>
+        <div class="setting-row"><label>AUDIO MASTER GAIN</label><input type="range" id="vol-slider" min="0" max="1" step="0.05" value="1" /></div>
+
+        <div style="margin-top: 12px; border-top: 1px solid rgba(136,136,0,0.25); padding-top: 10px;">
+            <div class="control-row"><span>MOVEMENT</span> <span class="key">WASD</span></div>
+            <div class="control-row"><span>SPRINT</span> <span class="key">SHIFT</span></div>
+            <div class="control-row"><span>CROUCH (TOGGLE)</span> <span class="key">C</span></div>
+            <div class="control-row"><span>NIGHT VISION</span> <span class="key">N</span></div>
+            <div class="control-row"><span>FLASHLIGHT</span> <span class="key">F</span></div>
+        </div>
+
+        <button id="resume-btn">RESUME FEED</button>
+    </div>
+</div>
+
+<div id="death-screen">
+    <div class="ui-box" style="text-align: center; opacity: 0; transition: opacity 2s;" id="death-ui-box">
+        <h1 style="color: #ff0000; letter-spacing: 5px;">SIGNAL LOST</h1>
+        <p id="death-status">DELETING ENCRYPTED LOGS... 0%</p>
+        <button onclick="location.reload()">RE-ESTABLISH CONNECTION</button>
+    </div>
+</div>
+
+<div id="win-screen">
+    <div class="ui-box" style="text-align: center;">
+        <h1>YOU ESCAPED</h1>
+        <p>RE-ENTRY TO BASELINE REALITY SUCCESSFUL</p>
+        <p id="final-time-display" style="font-size: 1.5rem; margin-top: 10px; color: #00ff00;"></p>
+        <button onclick="location.reload()">RE-ENTER ARCHIVE</button>
+    </div>
+</div>
+
+<div id="hud">
+    REC [●] <span id="timer">00:00:00</span><br />
+    SANITY: <span id="sanity-val">100</span>% | ALMOND WATER: <span id="keys-val">0</span>/<span id="required-val">3</span><br />
+    BATT: <span id="battery-val">100</span>%
+    <div id="stamina-bar"><div id="stamina-fill"></div></div>
+</div>
+
+<div id="bottom-message"></div>
+
+<script>
+/* ==========================
+   Deterministic RNG (multiplayer world gen only)
+   ========================== */
+function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function() {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/* ==========================
+   Wall texture function (unchanged)
+   ========================== */
+const createWallTex = (rng = Math.random) => {
+    const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#f0e68c'; ctx.fillRect(0,0,128,128);
+
+    for(let x=0; x<128; x+=16) {
+        const a = 0.06 + rng() * 0.08;
+        ctx.fillStyle = `rgba(90,80,45,${a})`;
+        ctx.fillRect(x, 0, 10 + rng() * 4, 128);
+    }
+
+    ctx.strokeStyle = 'rgba(70,60,35,0.22)'; ctx.lineWidth = 1;
+    for(let y=0; y<128; y+=32) { ctx.beginPath(); ctx.moveTo(0, y + (rng()*3)); ctx.lineTo(128, y + (rng()*3)); ctx.stroke(); }
+
+    const img = ctx.getImageData(0,0,128,128);
+    for(let i=0; i<img.data.length; i+=4) {
+        const n = (rng()-0.5) * 16;
+        img.data[i] += n; img.data[i+1] += n; img.data[i+2] += n;
+    }
+    ctx.putImageData(img, 0, 0);
+
+    const tex = new THREE.CanvasTexture(canvas); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2, 1); return tex;
+};
+
+const normalWallTex = createWallTex();
+const normalWallMat = new THREE.MeshStandardMaterial({ map: normalWallTex, roughness: 1 });
+const anomalousWallMats = [
+    new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x000033, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x003300, roughness: 1 }),
+];
+const glitchedWallMat = new THREE.MeshStandardMaterial({ color: 0xf0e68c, roughness: 1 });
+let glitchedColorInterval = null;
+// Start glitched color cycling once, but keep a handle so we can clear it on cleanup
+if (!glitchedColorInterval) {
+    glitchedColorInterval = setInterval(() => {
+        const glitchColors = [0xff00ff, 0x00ffff, 0xffff00, 0xff0000, 0x00ff00, 0x0000ff];
+        glitchedWallMat.color.setHex(glitchColors[Math.floor(Math.random() * glitchColors.length)]);
+    }, 300);
+}
+anomalousWallMats.push(glitchedWallMat);
+
+// Base anomalous chance (immutable baseline; server overrides in multiplayer init)
+let anomalousChance = 0.001;
+
+// Nightmare flags
+let isNightmare = false;
+let controlInvert = false;
+let invertTimer = 0;
+let glitchTimer = 0;
+
+/* ==========================
+   FLOOR TEXTURE (hard brown)
+   ========================== */
+const floorCanvas = document.createElement('canvas');
+floorCanvas.width = 256; floorCanvas.height = 256;
+const fCtx = floorCanvas.getContext('2d');
+fCtx.fillStyle = '#5b4720';
+fCtx.fillRect(0, 0, floorCanvas.width, floorCanvas.height);
+const id = fCtx.getImageData(0, 0, floorCanvas.width, floorCanvas.height);
+for (let i = 0; i < id.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 10;
+    id.data[i + 0] = Math.max(0, Math.min(255, id.data[i + 0] + n));
+    id.data[i + 1] = Math.max(0, Math.min(255, id.data[i + 1] + n));
+    id.data[i + 2] = Math.max(0, Math.min(255, id.data[i + 2] + n));
+}
+fCtx.putImageData(id, 0, 0);
+
+const floorTex = new THREE.CanvasTexture(floorCanvas);
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+floorTex.repeat.set(80, 80);
+
+const floorMat = new THREE.MeshStandardMaterial({
+    map: floorTex,
+    color: 0xffffff,
+    roughness: 1.0,
+    metalness: 0
+});
+const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x555533 });
+
+const strategyTips = [
+    "Entities avoid the starting zone... for a short time.",
+    "Night Vision consumes battery. Use only when necessary.",
+    "Collect the required Almond Waters to find the exit."
+];
+document.getElementById('strategy-tip').innerText = strategyTips[Math.floor(Math.random() * strategyTips.length)];
+
+/* ==========================
+   UI / Noise
+   ========================== */
+const vhsSlider = document.getElementById('vhs-slider');
+const volSlider = document.getElementById('vol-slider');
+const noiseCanvas = document.getElementById('noise-layer');
+let masterGainNode;
+
+vhsSlider.addEventListener('input', (e) => { noiseCanvas.style.opacity = e.target.value; });
+volSlider.addEventListener('input', (e) => { if(masterGainNode) masterGainNode.gain.value = e.target.value; });
+
+const nCtx = noiseCanvas.getContext('2d');
+
+/* --- noise layer fixes: reuse ImageData/buffer + lower fixed update rate --- */
+let noiseImageData = null;
+let noiseBuffer32 = null;
+let noiseLastGen = 0;
+let noiseIntervalMs = 1000 / 15; // ~15 fps
+let noiseSeed = 0x12345678 >>> 0;
+function noiseRandU32() {
+    noiseSeed ^= (noiseSeed << 13) >>> 0;
+    noiseSeed ^= (noiseSeed >>> 17) >>> 0;
+    noiseSeed ^= (noiseSeed << 5) >>> 0;
+    return noiseSeed >>> 0;
+}
+
+function resizeNoise() {
+    noiseCanvas.width = Math.floor(window.innerWidth * 0.5);
+    noiseCanvas.height = Math.floor(window.innerHeight * 0.5);
+    noiseImageData = nCtx.createImageData(noiseCanvas.width, noiseCanvas.height);
+    noiseBuffer32 = new Uint32Array(noiseImageData.data.buffer);
+}
+window.addEventListener('resize', resizeNoise); resizeNoise();
+
+function generateNoise() {
+    const now = performance.now();
+    if(now - noiseLastGen >= noiseIntervalMs && noiseImageData && noiseBuffer32) {
+        for(let i=0; i<noiseBuffer32.length; i++) noiseBuffer32[i] = (noiseRandU32() & 1) ? 0xff000000 : 0xffffffff;
+        nCtx.putImageData(noiseImageData, 0, 0);
+        noiseLastGen = now;
+    }
+    requestAnimationFrame(generateNoise);
+}
+generateNoise();
+
+/* ==========================
+   THREE Setup
+   ========================== */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x15120a);
+
+const baseFogDensity = 0.022;
+scene.fog = new THREE.FogExp2(0x1a1408, baseFogDensity);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const player = new THREE.Group();
+player.position.set(2, 1.7, 2);
+player.add(camera);
+scene.add(player);
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.75));
+document.body.appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ==========================
+   AUDIO ENGINE (base + illusions)
+   ========================== */
+let audioCtx, entityGain, ambientHum, humGainNode, audioNoiseBuffer, hum2, calmOsc, alarmOsc, alarmGain;
+function createNoiseBuffer() {
+    const bufferSize = 2 * 44100, buffer = audioCtx.createBuffer(1, bufferSize, 44100), output = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+    return buffer;
+}
+function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGainNode = audioCtx.createGain();
+    masterGainNode.connect(audioCtx.destination);
+
+    audioNoiseBuffer = createNoiseBuffer();
+    ambientHum = audioCtx.createOscillator();
+    hum2 = audioCtx.createOscillator();
+    humGainNode = audioCtx.createGain();
+    const humFilter = audioCtx.createBiquadFilter();
+    humFilter.type = "lowpass";
+    humFilter.frequency.value = 400;
+
+    ambientHum.type = 'triangle';
+    ambientHum.frequency.value = 60;
+    hum2.type = 'sine';
+    hum2.frequency.value = 62;
+
+    humGainNode.gain.value = 0.015;
+    ambientHum.connect(humFilter).connect(humGainNode).connect(masterGainNode);
+    hum2.connect(humFilter).connect(humGainNode).connect(masterGainNode);
+    ambientHum.start();
+    hum2.start();
+
+    entityGain = audioCtx.createGain();
+    entityGain.gain.value = 0;
+    const eOsc = audioCtx.createOscillator();
+    eOsc.type = 'sawtooth';
+    eOsc.frequency.value = 32;
+    const eFilter = audioCtx.createBiquadFilter();
+    eFilter.type = "lowpass";
+    eFilter.frequency.value = 100;
+    eOsc.connect(eFilter).connect(entityGain).connect(masterGainNode);
+    eOsc.start();
+
+    calmOsc = audioCtx.createOscillator();
+    calmOsc.type = 'sine';
+    calmOsc.frequency.value = 110;
+    const calmGain = audioCtx.createGain();
+    calmGain.gain.value = 0;
+    const calmFilter = audioCtx.createBiquadFilter();
+    calmFilter.type = "lowpass";
+    calmFilter.frequency.value = 300;
+    calmOsc.connect(calmFilter).connect(calmGain).connect(masterGainNode);
+    calmOsc.start();
+
+    alarmOsc = audioCtx.createOscillator();
+    alarmOsc.type = 'sine';
+    alarmOsc.frequency.value = 800;
+    alarmGain = audioCtx.createGain();
+    alarmGain.gain.value = 0;
+    alarmOsc.connect(alarmGain).connect(masterGainNode);
+    alarmOsc.start();
+}
+
+// ensure audio can be started/resumed by a user gesture
+function ensureAudioOnUserGesture() {
+    const resumeOnce = () => {
+        try { initAudio(); } catch(e) {}
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume && audioCtx.resume();
+        document.removeEventListener('pointerdown', resumeOnce);
+    };
+    document.addEventListener('pointerdown', resumeOnce, { once: true });
+}
+ensureAudioOnUserGesture();
+
+/* --- Abandoned-building sound illusions (subtle, sanity-aware) --- */
+function playIllusion(kind = "clang", intensity = 1.0) {
+    if (!audioCtx || !audioNoiseBuffer) return;
+
+    const t = audioCtx.currentTime;
+    const pan = (Math.random() * 2 - 1) * 0.85;
+
+    const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(pan, t);
+
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+
+    // sanity makes these slightly louder + more frequent, but never huge
+    const base = 0.02 + (1 - (sanity / 100)) * 0.03;
+    const vol = Math.min(0.08, base * intensity);
+
+    // noise source
+    const n = audioCtx.createBufferSource();
+    n.buffer = audioNoiseBuffer;
+
+    const f1 = audioCtx.createBiquadFilter();
+    const f2 = audioCtx.createBiquadFilter();
+    f1.type = "bandpass";
+    f2.type = "highpass";
+
+    if (kind === "clang") {
+        f1.frequency.value = 900 + Math.random() * 900;
+        f1.Q.value = 6 + Math.random() * 10;
+        f2.frequency.value = 200;
+    } else if (kind === "creak") {
+        f1.frequency.value = 180 + Math.random() * 180;
+        f1.Q.value = 2 + Math.random() * 4;
+        f2.frequency.value = 80;
+    } else if (kind === "footstep") {
+        f1.frequency.value = 260 + Math.random() * 120;
+        f1.Q.value = 3 + Math.random() * 6;
+        f2.frequency.value = 120;
+    } else if (kind === "whisper") {
+        f1.frequency.value = 1800 + Math.random() * 1000;
+        f1.Q.value = 1.5 + Math.random() * 2.5;
+        f2.frequency.value = 800;
+    }
+
+    const out = panner ? panner : g;
+    if (panner) panner.connect(g);
+
+    // envelope
+    g.gain.linearRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0007, t + (kind === "creak" ? 0.9 : 0.35));
+
+    n.connect(f1).connect(f2).connect(out);
+    g.connect(masterGainNode);
+
+    n.start(t);
+    n.stop(t + (kind === "creak" ? 0.9 : 0.35));
+}
+
+let illusionTimer = 0;
+function updateIllusions(delta, isRunning) {
+    if (!audioCtx) return;
+    illusionTimer -= delta;
+    if (illusionTimer > 0) return;
+
+    // Base interval, shorter as sanity drops; also slightly higher if sprinting.
+    const sanityFactor = 1 + (1 - sanity/100) * 1.2;
+    const runFactor = isRunning ? 0.7 : 1.0;
+    const next = (18 + Math.random() * 26) * runFactor / sanityFactor;
+
+    illusionTimer = next;
+
+    if (isDead || isWon || currentEvent === 'calm') return;
+
+    const roll = Math.random();
+    let kind = "clang";
+    if (roll < 0.30) kind = "clang";
+    else if (roll < 0.55) kind = "creak";
+    else if (roll < 0.78) kind = "footstep";
+    else kind = "whisper";
+
+    const intensity = (sanity < 45 ? 1.3 : 1.0) * (currentEvent === 'blackout' ? 1.2 : 1.0);
+    playIllusion(kind, intensity);
+}
+
+/* ==========================
+   Gameplay constants / state
+   ========================== */
+const GRID_SIZE = 80;
+const CELL_SIZE = 4;
+const colliders = [];
+const wallMeshes = [];
+const flickerLights = [];
+let almondWaters = [];
+let elevator = null;
+
+const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x00e5ff, emissive: 0x00aaff, emissiveIntensity: 2, transparent: true, opacity: 0.9
+});
+
+/* ==========================
+   Global scene references for cleanup
+   ========================== */
+let floorMesh = null;
+let ceilingMesh = null;
+let dustPoints = null; // dust geo/points are created later
+
+/* ==========================
+   Grid cells + 2D DDA LOS + scratch objects (performance)
+   ========================== */
+let wallGrid = new Uint8Array(GRID_SIZE * GRID_SIZE);
+let colliderCellMap = new Map();
+const _nearbyColliders = [];
+const _nearbyKeysSeen = new Set();
+function gridIndex(gx, gz) { return gx * GRID_SIZE + gz; }
+function clampGrid(v) { return Math.max(0, Math.min(GRID_SIZE - 1, v)); }
+function worldToGridX(x) { return clampGrid(Math.floor(x / CELL_SIZE + GRID_SIZE / 2)); }
+function worldToGridZ(z) { return clampGrid(Math.floor(z / CELL_SIZE + GRID_SIZE / 2)); }
+function cellKey(gx, gz) { return (gx << 8) | gz; }
+
+function addColliderToCellMap(gx, gz, colliderObj) {
+    const k = cellKey(gx, gz);
+    let arr = colliderCellMap.get(k);
+    if (!arr) { arr = []; colliderCellMap.set(k, arr); }
+    arr.push(colliderObj);
+}
+
+function queryCollidersNearWorld(pos, cellRadius = 2) {
+    _nearbyColliders.length = 0;
+    _nearbyKeysSeen.clear();
+
+    const gx = worldToGridX(pos.x);
+    const gz = worldToGridZ(pos.z);
+
+    for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+        for (let dz = -cellRadius; dz <= cellRadius; dz++) {
+            const x = gx + dx, z = gz + dz;
+            if (x < 0 || x >= GRID_SIZE || z < 0 || z >= GRID_SIZE) continue;
+
+            const k = cellKey(x, z);
+            if (_nearbyKeysSeen.has(k)) continue;
+            _nearbyKeysSeen.add(k);
+
+            const arr = colliderCellMap.get(k);
+            if (!arr) continue;
+            for (let i = 0; i < arr.length; i++) _nearbyColliders.push(arr[i]);
+        }
+    }
+    return _nearbyColliders;
+}
+
+function hasLineOfSight2D(aPos, bPos) {
+    // 2D DDA grid ray-march through wallGrid (no raycaster allocations).
+    let x0 = aPos.x / CELL_SIZE + GRID_SIZE / 2;
+    let z0 = aPos.z / CELL_SIZE + GRID_SIZE / 2;
+    let x1 = bPos.x / CELL_SIZE + GRID_SIZE / 2;
+    let z1 = bPos.z / CELL_SIZE + GRID_SIZE / 2;
+
+    if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) return false;
+
+    let gx = clampGrid(Math.floor(x0));
+    let gz = clampGrid(Math.floor(z0));
+    const gx1 = clampGrid(Math.floor(x1));
+    const gz1 = clampGrid(Math.floor(z1));
+
+    if (gx === gx1 && gz === gz1) return true;
+
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+
+    const stepX = dx > 0 ? 1 : -1;
+    const stepZ = dz > 0 ? 1 : -1;
+
+    const invDx = dx !== 0 ? 1 / Math.abs(dx) : 1e9;
+    const invDz = dz !== 0 ? 1 / Math.abs(dz) : 1e9;
+
+    let tMaxX = dx !== 0 ? ((stepX > 0 ? (Math.floor(x0) + 1 - x0) : (x0 - Math.floor(x0))) * invDx) : 1e9;
+    let tMaxZ = dz !== 0 ? ((stepZ > 0 ? (Math.floor(z0) + 1 - z0) : (z0 - Math.floor(z0))) * invDz) : 1e9;
+
+    const tDeltaX = invDx;
+    const tDeltaZ = invDz;
+
+    for (let it = 0; it < 256; it++) {
+        if (tMaxX < tMaxZ) {
+            gx += stepX;
+            tMaxX += tDeltaX;
+        } else {
+            gz += stepZ;
+            tMaxZ += tDeltaZ;
+        }
+
+        if (gx < 0 || gx >= GRID_SIZE || gz < 0 || gz >= GRID_SIZE) return true;
+
+        if (wallGrid[gridIndex(gx, gz)] === 1) return false;
+
+        if (gx === gx1 && gz === gz1) return true;
+    }
+    return true;
+}
+
+/* Global scratch vectors/boxes to reduce GC */
+const _vDir = new THREE.Vector3();
+const _vSide = new THREE.Vector3();
+const _vNextPos = new THREE.Vector3();
+const _vTmpA = new THREE.Vector3();
+const _vTmpB = new THREE.Vector3();
+const _vTmpC = new THREE.Vector3();
+const _boxPlayer = new THREE.Box3();
+const _boxEntity = new THREE.Box3();
+const _boxTmpA = new THREE.Box3();
+const _boxTmpB = new THREE.Box3();
+const _sizePlayerStand = new THREE.Vector3(0.5, 1.8, 0.5);
+const _sizePlayerCrouch = new THREE.Vector3(0.5, 1.2, 0.5);
+const _sizeEntity = new THREE.Vector3(0.55, 1.4, 0.55);
+
+/* ==========================
+   ENTITY 1 "Bacteria"
+   ========================== */
+const entity = new THREE.Group();
+
+const bacteriaSkin = new THREE.MeshStandardMaterial({ color: 0xb9b37a, roughness: 1, metalness: 0 });
+const bacteriaMold = new THREE.MeshStandardMaterial({ color: 0x3a5b2c, roughness: 1, metalness: 0 });
+const bacteriaDark = new THREE.MeshStandardMaterial({ color: 0x1a1a12, roughness: 1, metalness: 0 });
+
+const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.2, 3, 6), bacteriaSkin);
+torso.position.y = 2.15;
+entity.add(torso);
+
+for (let i = 0; i < 7; i++) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 0.06), (Math.random() < 0.45 ? bacteriaMold : bacteriaDark));
+    rib.position.set((Math.random() - 0.5) * 0.08, 2.55 - i * 0.18, 0.18 + Math.random() * 0.08);
+    rib.rotation.z = (Math.random() - 0.5) * 0.4;
+    entity.add(rib);
+}
+
+const headGroup = new THREE.Group();
+headGroup.position.y = 3.05;
+
+const skull = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), bacteriaSkin);
+skull.scale.set(0.9, 1.25, 0.95);
+headGroup.add(skull);
+
+const face = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), bacteriaDark);
+face.position.set(0, -0.02, 0.16);
+face.scale.set(1.2, 0.9, 0.8);
+headGroup.add(face);
+
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0x880000 });
+const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), eyeMat);
+eyeR.position.set(0.07, 0.05, 0.18);
+const eyeL = eyeR.clone(); eyeL.position.x = -0.07;
+headGroup.add(eyeR, eyeL);
+
+entity.add(headGroup);
+
+function makeArm(side = 1) {
+    const arm = new THREE.Group();
+    arm.position.set(side * 0.42, 2.75, 0);
+
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.95, 6), bacteriaSkin);
+    upper.position.y = -0.45;
+    upper.rotation.z = side * 0.2;
+    arm.add(upper);
+
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.95, 6), (Math.random() < 0.5 ? bacteriaSkin : bacteriaMold));
+    lower.position.y = -0.95;
+    upper.add(lower);
+
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), bacteriaDark);
+    hand.position.y = -0.55;
+    lower.add(hand);
+
+    for (let i = 0; i < 4; i++) {
+        const f = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.18, 5), bacteriaDark);
+        const a = (i / 4) * Math.PI * 2;
+        f.position.set(Math.cos(a) * 0.06, -0.12, Math.sin(a) * 0.06);
+        f.rotation.x = Math.PI * 0.5;
+        hand.add(f);
+    }
+
+    return { root: arm, upper, lower };
+}
+const armR = makeArm(1);
+const armL = makeArm(-1);
+entity.add(armR.root, armL.root);
+
+function makeLeg(side = 1) {
+    const leg = new THREE.Group();
+    leg.position.set(side * 0.16, 1.75, 0);
+
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 1.05, 6), bacteriaSkin);
+    upper.position.y = -0.55;
+    leg.add(upper);
+
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.035, 1.05, 6), bacteriaMold);
+    lower.position.y = -1.05;
+    upper.add(lower);
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.26), bacteriaDark);
+    foot.position.set(0, -0.55, 0.05);
+    lower.add(foot);
+
+    return { root: leg, upper, lower };
+}
+const legR = makeLeg(1);
+const legL = makeLeg(-1);
+entity.add(legR.root, legL.root);
+
+for (let i = 0; i < 10; i++) {
+    const clump = new THREE.Mesh(new THREE.SphereGeometry(0.05 + Math.random() * 0.06, 6, 6), bacteriaMold);
+    clump.position.set((Math.random()-0.5) * 0.6, 1.6 + Math.random() * 1.9, (Math.random()-0.5) * 0.35);
+    entity.add(clump);
+}
+
+/* ==========================
+   Entity2 visuals (unchanged)
+   ========================== */
+const entity2 = new THREE.Group();
+const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+const core = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), coreMat);
+core.position.y = 1.7;
+entity2.add(core);
+
+const rings = [];
+const ringConfigs = [
+    { radius: 1.2, tube: 0.03, axis: 'x' },
+    { radius: 1.0, tube: 0.03, axis: 'y' },
+    { radius: 0.8, tube: 0.03, axis: 'z' }
+];
+ringConfigs.forEach((config) => {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(config.radius, config.tube, 8, 50), ringMat);
+    ring.position.y = 1.7;
+    for(let j=0; j<8; j++) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06), coreMat);
+        const angle = (j / 8) * Math.PI * 2;
+        eye.position.set(Math.cos(angle) * config.radius, Math.sin(angle) * config.radius, 0);
+        ring.add(eye);
+    }
+    rings.push(ring);
+    entity2.add(ring);
+});
+
+const shards = [];
+for(let i=0; i<12; i++) {
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(0.1, 1.5, 3), ringMat);
+    shard.position.y = 1.7;
+    entity2.add(shard);
+    shards.push(shard);
+}
+
+const hLight = new THREE.PointLight(0xffff00, 10, 15);
+hLight.position.y = 1.7;
+entity2.add(hLight);
+
+const BOUNDARY_LIMIT = 160;
+
+let reachableCells = [];
+
+function getSafeSpawn(minDist = 40, mustBeReachable = false, rng = Math.random) {
+    let valid = false;
+    let pos = new THREE.Vector3();
+    let attempts = 0;
+
+    while(!valid && attempts < 10000) {
+        attempts++;
+        pos.set((rng()-0.5) * BOUNDARY_LIMIT * 1.8, 0, (rng()-0.5) * BOUNDARY_LIMIT * 1.8);
+
+        if(pos.distanceTo(new THREE.Vector3(0,0,0)) > minDist) {
+            const bBox = new THREE.Box3().setFromCenterAndSize(pos, new THREE.Vector3(1,2,1));
+            let blocked = false;
+            for(let c of colliders) if(bBox.intersectsBox(c.box)) { blocked = true; break; }
+            if(!blocked) {
+                if(!mustBeReachable) { valid = true; }
+                else {
+                    const gridX = Math.round(pos.x / CELL_SIZE + GRID_SIZE/2);
+                    const gridZ = Math.round(pos.z / CELL_SIZE + GRID_SIZE/2);
+                    if(reachableCells.some(cell => cell.x === gridX && cell.z === gridZ)) valid = true;
+                }
+            }
+        }
+    }
+    return pos;
+}
+
+const frustum = new THREE.Frustum();
+const projScreenMatrix = new THREE.Matrix4();
+let e2RoamTarget = new THREE.Vector3();
+let e2Mode = 'roam';
+let e2ForceChase = false;
+
+const raycaster = new THREE.Raycaster();
+let roamTarget = new THREE.Vector3();
+
+// Flashlight (warm)
+const camLight = new THREE.SpotLight(0xf0d080, 45, 45, 0.45, 0.5, 2);
+camera.add(camLight);
+camera.add(camLight.target);
+camLight.target.position.set(0, 0, -5);
+
+/* ==========================
+   Multiplayer networking state
+   ========================== */
+let isMultiplayer = false;
+let ws = null;
+let myClientId = null;
+let mpRoomId = null;
+let mpSeed = 0;
+let mpServerNowOffset = 0;
+
+let mpPlayers = new Map(); // id -> {x,y,z,yaw,crouch}
+let mpEntity1 = { x: 0, y: 1, z: 0 };
+let mpEntity2 = { x: 0, y: 1.7, z: 0 };
+
+// Multiplayer authoritative event state
+let currentEvent = null;
+let serverEventEndsAt = 0;
+
+// Multiplayer authoritative pickup states
+let mpBottlesTaken = new Set();
+let mpKeysCollected = 0;
+
+/* ==========================
+   Base variables (immutable defaults)
+   ========================== */
+let requiredWaters = 3;
+let resourceMode = 'standard';
+let staminaDrainMultiplier = 1.0;
+let staminaRecoveryMultiplier = 1.0;
+let batteryDrainMultiplier = 1.0;
+let sanityDrainMultiplier = 1.0;
+let eventMinDelay = 120000;
+let eventMaxDelay = 900000;
+let entitySpeedMultiplier = 1.0;
+
+/* --- physical events state (client effects) --- */
+let nvWasActive = false;
+let blackoutOriginalCamIntensity = 45;
+let redFlashInterval = null;
+let redAlarmInterval = null;
+let calmGainNode = null;
+
+/* --- controls & loop --- */
+let isLocked = false;
+let move = {f:false,b:false,l:false,r:false,shift:false};
+let gameStarted = false;
+let stamina = 100, sanity = 100, isDead = false, isWon = false;
+let battery = 100, nvActive = false, isExhausted = false, exhaustionTimer = 0;
+let flashlightOn = true;
+
+let keysCollected = 0;
+let stepTimer = 0;
+let startTime = 0, totalPausedTime = 0, pauseStartedAt = 0;
+
+const clock = new THREE.Clock();
+function formatTime(seconds) { return new Date(seconds * 1000).toISOString().substr(11, 8); }
+
+/* ==========================
+   Menu logic
+   ========================== */
+const mpMenu = document.getElementById('mp-menu');
+const mpModeSel = document.getElementById('mp-mode');
+const mpWatersRow = document.getElementById('mp-waters-row');
+const mpWatersSel = document.getElementById('mp-waters');
+const mpStatus = document.getElementById('mp-status');
+
+const spMenu = document.getElementById('sp-menu');
+const spModeSel = document.getElementById('sp-mode');
+const spCustomBlock = document.getElementById('sp-custom-block');
+const spBottlesSel = document.getElementById('sp-bottles');
+const spResourcesSel = document.getElementById('sp-resources');
+
+document.getElementById('multiplayer-btn').onclick = () => {
+    document.getElementById('blocker').style.display = 'none';
+    mpMenu.style.display = 'flex';
+};
+document.getElementById('mp-back').onclick = () => {
+    // stop reconnect attempts when user navigates back
+    stopReconnecting();
+    mpMenu.style.display = 'none';
+    document.getElementById('blocker').style.display = 'flex';
+};
+mpModeSel.addEventListener('change', () => {
+    mpWatersRow.style.display = (mpModeSel.value === 'normal') ? 'block' : 'none';
+});
+
+document.getElementById('mp-start').onclick = () => {
+    const roomCode = document.getElementById('mp-room').value.trim() || "ROOM";
+    const mode = mpModeSel.value === 'nightmare' ? 'nightmare' : 'normal';
+    const waters = parseInt(mpWatersSel.value, 10);
+
+    mpStatus.textContent = "Connecting...";
+    startMultiplayer(roomCode, mode, waters);
+};
+
+document.getElementById('quick-start-btn').onclick = () => {
+    document.getElementById('blocker').style.display = 'none';
+    spMenu.style.display = 'flex';
+};
+
+document.getElementById('sp-back').onclick = () => {
+    spMenu.style.display = 'none';
+    document.getElementById('blocker').style.display = 'flex';
+};
+
+spModeSel.addEventListener('change', () => {
+    spCustomBlock.style.display = (spModeSel.value === 'custom') ? 'block' : 'none';
+});
+
+function applyResourceMode(mode) {
+    resourceMode = mode;
+    if (mode === 'increased') {
+        staminaDrainMultiplier = 0.82;
+        staminaRecoveryMultiplier = 1.25;
+        batteryDrainMultiplier = 0.78;
+        sanityDrainMultiplier = 0.82;
+        eventMinDelay = 150000;
+        eventMaxDelay = 980000;
+    } else {
+        staminaDrainMultiplier = 1.0;
+        staminaRecoveryMultiplier = 1.0;
+        batteryDrainMultiplier = 1.0;
+        sanityDrainMultiplier = 1.0;
+        eventMinDelay = 120000;
+        eventMaxDelay = 900000;
+    }
+}
+
+function cleanupWorld() {
+    // remove walls
+    for (let i = wallMeshes.length - 1; i >= 0; i--) {
+        scene.remove(wallMeshes[i]);
+    }
+    wallMeshes.length = 0;
+
+    // lights
+    for (let i = flickerLights.length - 1; i >= 0; i--) {
+        scene.remove(flickerLights[i]);
+    }
+    flickerLights.length = 0;
+
+    // bottles
+    for (let i = almondWaters.length - 1; i >= 0; i--) {
+        scene.remove(almondWaters[i]);
+    }
+    almondWaters.length = 0;
+
+    // colliders
+    colliders.length = 0;
+    colliderCellMap.clear();
+
+    // elevator
+    if (elevator) { scene.remove(elevator); elevator = null; }
+
+    // entities
+    try { scene.remove(entity); } catch(e) {}
+    try { scene.remove(entity2); } catch(e) {}
+
+    // floor / ceiling if present
+    if (floorMesh) { scene.remove(floorMesh); floorMesh = null; }
+    if (ceilingMesh) { scene.remove(ceilingMesh); ceilingMesh = null; }
+
+    // dust
+    if (dustPoints) { scene.remove(dustPoints); dustPoints = null; }
+
+    // clear timers/intervals used globally
+    if (redFlashInterval) { clearInterval(redFlashInterval); redFlashInterval = null; }
+    if (redAlarmInterval) { clearInterval(redAlarmInterval); redAlarmInterval = null; }
+
+    // keep glitched color interval running by default, but allow it to be cleared on unload
+}
+
+document.getElementById('sp-start').onclick = () => {
+    const m = spModeSel.value;
+
+    isMultiplayer = false;
+    anomalousChance = 0.001;
+    entitySpeedMultiplier = 1.0;
+    document.getElementById('nightmare-tint').style.display = 'none';
+
+    if (m === 'normal') {
+        isNightmare = false;
+        requiredWaters = 3;
+        applyResourceMode('standard');
+    } else if (m === 'nightmare') {
+        isNightmare = true;
+        requiredWaters = 7;
+        applyResourceMode('standard');
+        eventMinDelay = 60000;
+        eventMaxDelay = 420000;
+        entitySpeedMultiplier = 1.4;
+        anomalousChance = 0.1;
+        document.getElementById('nightmare-tint').style.display = 'block';
+    } else if (m === 'custom') {
+        isNightmare = false;
+        requiredWaters = parseInt(spBottlesSel.value, 10);
+        applyResourceMode(spResourcesSel.value === 'increased' ? 'increased' : 'standard');
+    } else if (m === 'random') {
+        isNightmare = false;
+        requiredWaters = 1 + Math.floor(Math.random() * 5);
+        applyResourceMode(Math.random() < 0.5 ? 'standard' : 'increased');
+    }
+
+    spMenu.style.display = 'none';
+    startGame();
+};
+
+document.getElementById('resume-btn').onclick = () => { document.body.requestPointerLock(); };
+
+document.addEventListener('pointerlockchange', () => {
+    isLocked = document.pointerLockElement === document.body;
+    if(!gameStarted) return;
+    document.getElementById('pause-menu').style.display = isLocked ? 'none' : 'flex';
+    if(!isLocked) pauseStartedAt = Date.now();
+    else if(pauseStartedAt > 0) { totalPausedTime += (Date.now() - pauseStartedAt); pauseStartedAt = 0; }
+});
+
+/* ==========================
+   Multiplayer connect
+   ========================== */
+function wsUrl() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}`;
+}
+
+// WebSocket resilient manager: reconnect/backoff, ping/pong keepalive, and message validation
+let wsReconnectAttempts = 0;
+let wsMaxReconnectAttempts = 10;
+let wsShouldReconnect = false;
+let wsReconnectTimer = null;
+let wsPingInterval = null;
+let wsLastPong = 0;
+let lastJoinParams = null;
+
+function stopReconnecting() {
+    wsShouldReconnect = false;
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+    if (ws) { try { ws.close(); } catch(e) {} ws = null; }
+    if (wsPingInterval) { clearInterval(wsPingInterval); wsPingInterval = null; }
+    mpStatus.textContent = "Disconnected.";
+}
+
+function handleWsMessage(msg) {
+    if (!msg || typeof msg.type !== 'string') return;
+
+    if (msg.type === "pong") {
+        wsLastPong = Date.now();
+        return;
+    }
+
+    if (msg.type === "hello") {
+        if (Number.isFinite(msg.clientId)) myClientId = msg.clientId;
+        return;
+    }
+
+    if (msg.type === "init") {
+        if (typeof msg.roomId === 'string') mpRoomId = msg.roomId;
+        if (Number.isFinite(msg.seed)) mpSeed = msg.seed >>> 0;
+        if (Number.isFinite(msg.requiredWaters)) requiredWaters = msg.requiredWaters;
+        if (typeof msg.anomalousChance === 'number') anomalousChance = msg.anomalousChance;
+        if (typeof msg.entitySpeedMultiplier === 'number') entitySpeedMultiplier = msg.entitySpeedMultiplier;
+        isNightmare = (msg.mode === "nightmare");
+        document.getElementById('nightmare-tint').style.display = isNightmare ? 'block' : 'none';
+
+        mpKeysCollected = msg.keysCollected || 0;
+        keysCollected = mpKeysCollected;
+
+        currentEvent = msg.currentEvent || null;
+        serverEventEndsAt = msg.eventEndsAt || 0;
+        mpServerNowOffset = (msg.serverNow || Date.now()) - Date.now();
+
+        mpBottlesTaken.clear();
+        if (Array.isArray(msg.bottles)) {
+            msg.bottles.forEach(b => { if (b && b.id != null && b.taken) mpBottlesTaken.add(b.id); });
+        }
+
+        elevator = null;
+        if (msg.elevator && Number.isFinite(msg.elevator.x)) {
+            spawnElevatorAt(msg.elevator.x, msg.elevator.z);
+        }
+
+        if (msg.spawn && Number.isFinite(msg.spawn.x) && Number.isFinite(msg.spawn.z)) {
+            player.position.set(msg.spawn.x, msg.spawn.y || 1.7, msg.spawn.z);
+        }
+
+        mpStatus.textContent = `In room ${mpRoomId}. Seed locked.`;
+        mpMenu.style.display = 'none';
+
+        startGame(true, msg.bottles || []);
+        return;
+    }
+
+    if (msg.type === "players") {
+        if (!Array.isArray(msg.players)) return;
+        msg.players.forEach(p => {
+            if (!p || !p.id) return;
+            if (p.id === myClientId) return;
+            mpPlayers.set(p.id, p);
+        });
+        return;
+    }
+
+    if (msg.type === "entities") {
+        if (msg.e1) { mpEntity1 = msg.e1; entity.position.set(msg.e1.x, msg.e1.y || 1, msg.e1.z); }
+        if (msg.e2) { mpEntity2 = msg.e2; entity2.position.set(msg.e2.x, msg.e2.y || 1.7, msg.e2.z); }
+        if (msg.event !== undefined) currentEvent = msg.event;
+        if (msg.eventEndsAt) serverEventEndsAt = msg.eventEndsAt;
+        if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
+        return;
+    }
+
+    if (msg.type === "event") {
+        if (msg.phase === "start") {
+            currentEvent = msg.event;
+            serverEventEndsAt = msg.endsAt || 0;
+            if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
+            applyEventStart(currentEvent);
+        } else if (msg.phase === "end") {
+            if (msg.event === currentEvent) {
+                applyEventEnd(currentEvent);
+                currentEvent = null;
+                serverEventEndsAt = 0;
+            } else {
+                applyEventEnd(msg.event);
+            }
+            if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
+        }
+        return;
+    }
+
+    if (msg.type === "pickup") {
+        if (msg.id == null) return;
+        mpBottlesTaken.add(msg.id);
+        keysCollected = msg.keysCollected || keysCollected;
+        mpKeysCollected = keysCollected;
+        document.getElementById('keys-val').innerText = keysCollected;
+        if (msg.requiredWaters) document.getElementById('required-val').innerText = msg.requiredWaters;
+
+        for (let i = almondWaters.length - 1; i >= 0; i--) {
+            const b = almondWaters[i];
+            if (b.userData && b.userData.bottleId === msg.id) {
+                scene.remove(b);
+                almondWaters.splice(i, 1);
+                break;
+            }
+        }
+        showTempMessage("Almond Water collected.", 2500);
+        return;
+    }
+
+    if (msg.type === "elevator" && msg.spawn) {
+        spawnElevatorAt(msg.x, msg.z);
+        showTempMessage("Exit revealed.", 12000);
+        return;
+    }
+
+    if (msg.type === "teleport") {
+        if (msg.playerId === myClientId) {
+            player.position.x = msg.x;
+            player.position.z = msg.z;
+            const flash = document.getElementById('retinal-burn');
+            flash.style.opacity = '1';
+            setTimeout(() => { flash.style.opacity = '0'; }, 90);
+        }
+        return;
+    }
+
+    if (msg.type === "death") {
+        if (msg.playerId === myClientId && !isDead) {
+            triggerJumpscare();
+        }
+        return;
+    }
+
+    if (msg.type === "win") {
+        if (!isWon) {
+            isWon = true;
+            document.getElementById('final-time-display').innerText = `TIME: ${formatTime((Date.now() - startTime - totalPausedTime) / 1000)}`;
+            document.exitPointerLock();
+            document.getElementById('win-screen').style.display = 'flex';
+        }
+        return;
+    }
+}
+
+function scheduleReconnect() {
+    if (!wsShouldReconnect) return;
+    wsReconnectAttempts++;
+    if (wsReconnectAttempts > wsMaxReconnectAttempts) {
+        mpStatus.textContent = "Unable to reconnect to server.";
+        return;
+    }
+    const backoff = Math.min(30000, Math.pow(1.6, wsReconnectAttempts) * 500 + Math.random() * 2000);
+    mpStatus.textContent = `Reconnecting in ${Math.round(backoff/1000)}s... (attempt ${wsReconnectAttempts})`;
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(() => {
+        connectWebSocket(lastJoinParams.roomCode, lastJoinParams.mode, lastJoinParams.waters);
+    }, backoff);
+}
+
+function connectWebSocket(roomCode, mode, waters) {
+    // store params for automatic rejoin
+    lastJoinParams = { roomCode, mode, waters };
+    if (ws) { try { ws.close(); } catch(e) {} ws = null; }
+
+    try {
+        ws = new WebSocket(wsUrl());
+    } catch (e) {
+        mpStatus.textContent = "WebSocket creation failed.";
+        scheduleReconnect();
+        return;
+    }
+
+    ws.onopen = () => {
+        wsReconnectAttempts = 0;
+        mpStatus.textContent = "Connected. Joining room...";
+        ws.send(JSON.stringify({ type: "join", roomCode, mode, waters }));
+
+        // start ping/pong keepalive
+        wsLastPong = Date.now();
+        if (wsPingInterval) clearInterval(wsPingInterval);
+        wsPingInterval = setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            try { ws.send(JSON.stringify({ type: 'ping' })); } catch(e) {}
+            if (Date.now() - wsLastPong > 30000) {
+                // no pong recently, force reconnect
+                try { ws.close(); } catch(e) {}
+            }
+        }, 20000);
+    };
+
+    ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch(e) { console.warn('Invalid WS payload', e); return; }
+        handleWsMessage(msg);
+    };
+
+    ws.onerror = () => { mpStatus.textContent = "WebSocket error. Will attempt to reconnect."; };
+
+    ws.onclose = () => {
+        if (wsPingInterval) { clearInterval(wsPingInterval); wsPingInterval = null; }
+        if (!gameStarted) mpStatus.textContent = "Disconnected.";
+        if (wsShouldReconnect) scheduleReconnect();
+    };
+}
+
+function startMultiplayer(roomCode, mode, waters) {
+    isMultiplayer = true;
+    wsShouldReconnect = true;
+    wsReconnectAttempts = 0;
+    // store last join params and connect
+    lastJoinParams = { roomCode, mode, waters };
+    connectWebSocket(roomCode, mode, waters);
+}
+
+/* ==========================
+   Deterministic world generation
+   ========================== */
+let mpSeededRng = null;
+
+function getZoneBrightness(x, z) {
+    const v = (Math.sin(x * 0.03) + Math.cos(z * 0.03) + Math.sin((x + z) * 0.02)) * 0.5;
+    const n = (v + 1) * 0.5;
+    return 0.4 + n * 1.8;
+}
+
+let originalLightIntensities = [];
+
+function generateWorld(multiplayerInitBottles = null) {
+    // ensure previous generation is cleaned up
+    cleanupWorld();
+
+    floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), floorMat);
+    floorMesh.rotateX(-Math.PI/2);
+    scene.add(floorMesh);
+
+    ceilingMesh = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), ceilingMat);
+    ceilingMesh.position.y = 5;
+    ceilingMesh.rotateX(Math.PI/2);
+    scene.add(ceilingMesh);
+
+    reachableCells = [];
+    originalLightIntensities = [];
+
+    /* --- reset spatial structures for this generation --- */
+    wallGrid = new Uint8Array(GRID_SIZE * GRID_SIZE);
+    colliderCellMap = new Map();
+
+    const visited = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(false));
+    const rng = (isMultiplayer && mpSeededRng) ? mpSeededRng : Math.random;
+
+    for(let x = -GRID_SIZE/2; x < GRID_SIZE/2; x++) {
+        for(let z = -GRID_SIZE/2; z < GRID_SIZE/2; z++) {
+            const px = x * CELL_SIZE;
+            const pz = z * CELL_SIZE;
+
+            if (Math.abs(x) < 4 && Math.abs(z) < 4) continue;
+
+            const mathSeed = (Math.sin(x * 0.9) + Math.cos(z * 0.9));
+            const realityDecay = rng();
+
+            let isWall = (mathSeed > 0.4 && realityDecay < 0.95) || (mathSeed <= 0.4 && realityDecay < 0.04);
+
+            const gx = x + GRID_SIZE/2;
+            const gz = z + GRID_SIZE/2;
+
+            if (isWall) {
+                wallGrid[gridIndex(gx, gz)] = 1;
+
+                const h = 5;
+                const mat = rng() < (1 - anomalousChance) ? normalWallMat : anomalousWallMats[Math.floor(rng() * anomalousWallMats.length)];
+                const wall = new THREE.Mesh(new THREE.BoxGeometry(CELL_SIZE, h, CELL_SIZE), mat);
+                wall.position.set(px, h/2, pz);
+                scene.add(wall);
+
+                const col = {box: new THREE.Box3().setFromObject(wall), center: wall.position.clone()};
+                colliders.push(col);
+                addColliderToCellMap(gx, gz, col);
+
+                wallMeshes.push(wall);
+            } else if (rng() > 0.99) {
+                const zone = getZoneBrightness(px, pz);
+                const baseInt = 0.8 + rng() * 3.2;
+                const pL = new THREE.PointLight(0xffffaa, baseInt * zone, 10);
+                pL.position.set(px, 4.8, pz);
+                scene.add(pL);
+                flickerLights.push(pL);
+                originalLightIntensities.push(pL.intensity);
+            }
+        }
+    }
+
+    const startGridX = Math.floor(GRID_SIZE/2);
+    const startGridZ = Math.floor(GRID_SIZE/2);
+    const queue = [{x: startGridX, z: startGridZ}];
+    visited[startGridX][startGridZ] = true;
+    reachableCells.push({x: startGridX, z: startGridZ});
+    const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+
+    while(queue.length > 0) {
+        const cur = queue.shift();
+        for(let d of dirs) {
+            const nx = cur.x + d[0];
+            const nz = cur.z + d[1];
+            if(nx >= 0 && nx < GRID_SIZE && nz >= 0 && nz < GRID_SIZE && !visited[nx][nz]) {
+                const worldX = (nx - GRID_SIZE/2) * CELL_SIZE;
+                const worldZ = (nz - GRID_SIZE/2) * CELL_SIZE;
+                let blocked = false;
+                const testBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(worldX, 1, worldZ), new THREE.Vector3(1,2,1));
+                for(let c of colliders) {
+                    if(testBox.intersectsBox(c.box)) { blocked = true; break; }
+                }
+                if(!blocked) {
+                    visited[nx][nz] = true;
+                    reachableCells.push({x: nx, z: nz});
+                    queue.push({x: nx, z: nz});
+                }
+            }
+        }
+    }
+
+    almondWaters = [];
+
+    if (isMultiplayer && Array.isArray(multiplayerInitBottles)) {
+        multiplayerInitBottles.forEach((b) => {
+            if (!b || b.x == null || b.z == null) return;
+            if (b.taken) return;
+            const bottle = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.4), waterMat);
+            bottle.add(body);
+            const bLight = new THREE.PointLight(0x00e5ff, 5, 8);
+            bLight.position.y = 0.5;
+            bottle.add(bLight);
+            bottle.position.set(b.x, 0.5, b.z);
+            bottle.userData.bottleId = b.id;
+            scene.add(bottle);
+            almondWaters.push(bottle);
+        });
+    } else {
+        for(let i=0; i<requiredWaters; i++){
+            const bottle = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.4), waterMat);
+            bottle.add(body);
+            const bLight = new THREE.PointLight(0x00e5ff, 5, 8);
+            bLight.position.y = 0.5;
+            bottle.add(bLight);
+            const spawnPos = getSafeSpawn(5, true, rng);
+            bottle.position.copy(spawnPos);
+            bottle.position.y = 0.5;
+            bottle.userData.bottleId = i;
+            scene.add(bottle);
+            almondWaters.push(bottle);
+        }
+    }
+
+    if (!isMultiplayer) {
+        const sSpawn = getSafeSpawn(60, true, rng);
+        entity.position.copy(sSpawn);
+        entity.position.y = 0.9;
+        scene.add(entity);
+
+        const hSpawn = getSafeSpawn(140, true, rng);
+        entity2.position.copy(hSpawn);
+        scene.add(entity2);
+
+        e2RoamTarget.copy(getSafeSpawn(20, true, rng));
+        roamTarget.copy(getSafeSpawn(20, true, rng));
+    } else {
+        entity.position.set(0, 1, 0);
+        entity2.position.set(0, 1.7, 0);
+        scene.add(entity);
+        scene.add(entity2);
+    }
+
+    scene.add(new THREE.AmbientLight(0xaaaa66, 0.17));
+    const hemiLight = new THREE.HemisphereLight(0xaaaa44, 0x332211, 0.035);
+    scene.add(hemiLight);
+
+    const wallHeight = 50;
+    const wallThickness = 2;
+    const boundary = BOUNDARY_LIMIT + 5;
+    const surroundMat = normalWallMat.clone();
+
+    const northWall = new THREE.Mesh(new THREE.BoxGeometry(boundary*2 + wallThickness, wallHeight, wallThickness), surroundMat);
+    northWall.position.set(0, wallHeight/2, boundary);
+    scene.add(northWall);
+
+    const southWall = northWall.clone();
+    southWall.position.z = -boundary;
+    scene.add(southWall);
+
+    const eastWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, boundary*2 + wallThickness), surroundMat);
+    eastWall.position.set(boundary, wallHeight/2, 0);
+    scene.add(eastWall);
+
+    const westWall = eastWall.clone();
+    westWall.position.x = -boundary;
+    scene.add(westWall);
+}
+
+/* ==========================
+   Dust (completed + stabilized)
+   ========================== */
+let dustGeo = null;
+let dustMatPoints = null;
+let dustPos = null;
+let dustVel = null;
+let dustCount = 900;
+let dustRadius = 10;
+
+/* --- dust fixes: precomputed random table + half-step update to cut work --- */
+const _randMask = 16383;
+const _randTable = new Float32Array(_randMask + 1);
+let _randIdx = 0;
+for (let i = 0; i < _randTable.length; i++) _randTable[i] = (Math.random() * 2 - 1);
+function randSigned() {
+    _randIdx = (_randIdx + 1) & _randMask;
+    return _randTable[_randIdx];
+}
+let dustPhase = 0;
+
+function spawnDustParticle(i) {
+    const u = Math.random();
+    const v = Math.random();
+    const theta = u * Math.PI * 2;
+    const phi = Math.acos(2 * v - 1);
+    const r = Math.cbrt(Math.random()) * dustRadius;
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = (Math.random() * 3.2) + 0.3;
+    const z = r * Math.sin(phi) * Math.sin(theta);
+
+    dustPos[i*3+0] = player.position.x + x;
+    dustPos[i*3+1] = y;
+    dustPos[i*3+2] = player.position.z + z;
+
+    dustVel[i*3+0] = (Math.random() * 2 - 1) * 0.08;
+    dustVel[i*3+1] = (Math.random() * 2 - 1) * 0.03;
+    dustVel[i*3+2] = (Math.random() * 2 - 1) * 0.08;
+}
+
+function initDust() {
+    dustGeo = new THREE.BufferGeometry();
+    dustPos = new Float32Array(dustCount * 3);
+    dustVel = new Float32Array(dustCount * 3);
+    for(let i=0; i<dustCount; i++) spawnDustParticle(i);
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+    dustMatPoints = new THREE.PointsMaterial({ color: 0xffffdd, size: 0.025, transparent: true, opacity: 0.12, depthWrite: false });
+    dustPoints = new THREE.Points(dustGeo, dustMatPoints);
+    scene.add(dustPoints);
+}
+
+/* ==========================
+   Physical events (singleplayer)
+   ========================== */
+function startPhysicalEvents() {
+    if (isMultiplayer) return;
+
+    const delay = eventMinDelay + Math.random() * (eventMaxDelay - eventMinDelay);
+    setTimeout(() => {
+        if(!gameStarted || isDead || isWon || currentEvent) {
+            startPhysicalEvents();
+            return;
+        }
+        const events = ['blackout', 'redflash', 'calm', 'silhouette'];
+        currentEvent = events[Math.floor(Math.random() * events.length)];
+
+        const minDuration = 30000;
+        const maxDuration = 70000;
+        const duration = minDuration + Math.random() * (maxDuration - minDuration);
+
+        applyEventStart(currentEvent);
+
+        setTimeout(() => {
+            applyEventEnd(currentEvent);
+            currentEvent = null;
+            startPhysicalEvents();
+        }, duration);
+    }, delay);
+}
+
+function applyEventStart(evt) {
+    if (!evt) return;
+
+    if(evt === 'blackout') {
+        showTempMessage("TOTAL POWER FAILURE", 8000);
+        nvWasActive = nvActive;
+        blackoutOriginalCamIntensity = camLight.intensity;
+
+        camLight.intensity = 0;
+
+        if(nvActive) {
+            nvActive = false;
+            document.getElementById('nv-overlay').style.display = 'none';
+            scene.fog.density = baseFogDensity;
+        }
+
+        if(humGainNode) humGainNode.gain.setValueAtTime(0, audioCtx ? audioCtx.currentTime : 0);
+        flickerLights.forEach(l => l.intensity = 0);
+        scene.traverse(child => { if(child instanceof THREE.PointLight && child !== camLight) child.intensity = 0; });
+        almondWaters.forEach(b => { if(b.children[1]) b.children[1].intensity = 0; });
+
+    } else if(evt === 'redflash') {
+        showTempMessage("BREACH DETECTED", 8000);
+        if (redFlashInterval) clearInterval(redFlashInterval);
+        redFlashInterval = setInterval(() => {
+            const overlay = document.getElementById('red-flash-overlay');
+            overlay.style.background = 'rgba(255,0,0,0.6)';
+            setTimeout(() => { overlay.style.background = 'rgba(255,0,0,0)'; }, 100);
+        }, 200);
+
+        if (alarmGain && audioCtx) alarmGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        if (redAlarmInterval) clearInterval(redAlarmInterval);
+        redAlarmInterval = setInterval(() => {
+            if (!audioCtx || !alarmOsc) return;
+            alarmOsc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            alarmOsc.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.4);
+        }, 800);
+
+        e2ForceChase = true;
+
+    } else if(evt === 'calm') {
+        showTempMessage("...", 8000);
+        document.getElementById('calm-overlay').style.background = 'rgba(0,50,100,0.15)';
+
+        if (audioCtx) {
+            calmGainNode = audioCtx.createGain();
+            calmOsc.connect(calmGainNode).connect(masterGainNode);
+            calmGainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
+        }
+        almondWaters.forEach(b => { if(b.children[1]) b.children[1].intensity = 30; });
+
+    } else if(evt === 'silhouette') {
+        const fake = document.getElementById('fake-silhouette');
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
+        const offset = side.multiplyScalar((Math.random() > 0.5 ? 1 : -1) * (40 + Math.random() * 60));
+        offset.y = 2;
+        offset.add(player.position);
+        fake.style.left = '50%'; fake.style.top = '50%';
+        fake.style.transform = `translate(-50%, -50%) translate(${offset.x * 8}px, ${-offset.z * 8}px) scale(1.5)`;
+        fake.style.opacity = '0.8';
+        setTimeout(() => { fake.style.opacity = '0'; }, 45000);
+    }
+}
+
+function applyEventEnd(evt) {
+    if (!evt) return;
+
+    if(evt === 'blackout') {
+        flickerLights.forEach((l, i) => {
+            setTimeout(() => l.intensity = originalLightIntensities[i] || 2, i * 100 + Math.random() * 200);
+        });
+        almondWaters.forEach(b => {
+            if(b.children[1]) setTimeout(() => b.children[1].intensity = 5, Math.random() * 300);
+        });
+
+        setTimeout(() => camLight.intensity = 0.1, 200);
+        setTimeout(() => camLight.intensity = 10, 400);
+        setTimeout(() => camLight.intensity = blackoutOriginalCamIntensity, 600);
+
+        if (humGainNode && audioCtx) {
+            setTimeout(() => humGainNode.gain.setValueAtTime(0.005, audioCtx.currentTime), 300);
+            setTimeout(() => humGainNode.gain.setValueAtTime(0.015, audioCtx.currentTime + 0.2), 500);
+        }
+
+        if(nvWasActive) {
+            nvActive = true;
+            document.getElementById('nv-overlay').style.display = 'block';
+            scene.fog.density = 0.01;
+            camLight.intensity = 100;
+        } else {
+            if(!nvActive) camLight.intensity = flashlightOn ? 45 : 0;
+        }
+
+    } else if(evt === 'redflash') {
+        if(redFlashInterval) clearInterval(redFlashInterval);
+        if(redAlarmInterval) clearInterval(redAlarmInterval);
+        if (alarmGain && audioCtx) alarmGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        document.getElementById('red-flash-overlay').style.background = 'rgba(255,0,0,0)';
+        e2ForceChase = false;
+
+    } else if(evt === 'calm') {
+        document.getElementById('calm-overlay').style.background = 'rgba(0,50,100,0)';
+        if(calmGainNode && audioCtx) calmGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        almondWaters.forEach(b => { if(b.children[1]) b.children[1].intensity = 5; });
+    }
+}
+
+/* ==========================
+   Elevator spawn helper
+   ========================== */
+function spawnElevatorAt(x, z) {
+    if (elevator) return;
+    elevator = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(3, 5, 1.2), new THREE.MeshStandardMaterial({color: 0x333333}));
+    frame.position.set(0, 2.5, 0);
+    elevator.add(frame);
+
+    const doors = new THREE.Mesh(new THREE.BoxGeometry(2.2, 4.2, 0.15), new THREE.MeshStandardMaterial({color: 0x777777, metalness: 0.8}));
+    doors.position.set(0, 2, 0.6);
+    elevator.add(doors);
+
+    const winLight = new THREE.PointLight(0x00ff00, 25, 20);
+    winLight.position.set(0, 4, 3);
+    elevator.add(winLight);
+
+    elevator.position.set(x, 0, z);
+    scene.add(elevator);
+}
+
+/* ==========================
+   Messages
+   ========================== */
+const messages = ["Logic failure...", "Architecture unstable.", "It tracks your scent.", "HELP!", "Just keep going.", "Where am I?", "Is anyone there?", "A shiver runs down your spine", "What was that?", "It's right there", "uh oh", "Turn around", "p;23kj&#*"];
+function showTempMessage(text, duration = 10000) {
+    const el = document.getElementById('bottom-message');
+    el.style.opacity = '0';
+    setTimeout(() => {
+        el.innerText = text;
+        el.style.opacity = '1';
+        setTimeout(() => { el.style.opacity = '0'; }, duration);
+    }, 250);
+}
+function updateMessage() {
+    if (isDead || isWon) return;
+    showTempMessage(messages[Math.floor(Math.random() * messages.length)]);
+    setTimeout(updateMessage, Math.random() * 150000 + 100000);
+}
+
+/* ==========================
+   Multiplayer - Player bodies
+   ========================== */
+const mpPlayerMeshes = new Map();
+
+function createRemotePlayerMesh() {
+    const g = new THREE.Group();
+
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 1, metalness: 0 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 1, metalness: 0 });
+
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.65, 3, 6), bodyMat);
+    body.position.y = 1.1;
+    g.add(body);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), headMat);
+    head.position.y = 1.62;
+    g.add(head);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), new THREE.MeshBasicMaterial({ color: 0x999999 }));
+    eye.position.set(0.06, 1.62, 0.14);
+    const eye2 = eye.clone(); eye2.position.x = -0.06;
+    g.add(eye, eye2);
+
+    return g;
+}
+
+function syncRemotePlayers() {
+    for (const [id, mesh] of mpPlayerMeshes.entries()) {
+        if (!mpPlayers.has(id)) {
+            scene.remove(mesh);
+            mpPlayerMeshes.delete(id);
+        }
+    }
+
+    for (const [id, p] of mpPlayers.entries()) {
+        if (!mpPlayerMeshes.has(id)) {
+            const m = createRemotePlayerMesh();
+            mpPlayerMeshes.set(id, m);
+            scene.add(m);
+        }
+        const m = mpPlayerMeshes.get(id);
+        if (!m) continue;
+
+        m.position.set(p.x || 0, 0, p.z || 0);
+        if (Number.isFinite(p.yaw)) m.rotation.y = p.yaw;
+        m.scale.y = p.crouch ? 0.78 : 1.0;
+    }
+}
+
+/* ==========================
+   Start game
+   ========================== */
+function startGame(fromMultiplayerInit = false, mpBottleList = []) {
+    if (isMultiplayer) mpSeededRng = mulberry32(mpSeed);
+
+    generateWorld(isMultiplayer ? mpBottleList : null);
+
+    initAudio();
+    initDust();
+
+    document.body.requestPointerLock();
+    gameStarted = true;
+    document.getElementById('blocker').style.display = 'none';
+    document.getElementById('mp-menu').style.display = 'none';
+    document.getElementById('sp-menu').style.display = 'none';
+
+    startTime = Date.now();
+    document.getElementById('required-val').innerText = requiredWaters;
+    document.getElementById('keys-val').innerText = keysCollected;
+
+    if (!isMultiplayer) startPhysicalEvents();
+    updateMessage();
+}
+
+/* ==========================
+   Input / camera
+   ========================== */
+let mouseYMultiplier = 1;
+let cameraPitchTarget = 0;
+let isCrouching = false;
+let crouchHeight = 1.1;
+let standHeight = 1.7;
+
+document.addEventListener('mousemove', e => {
+    if(!isLocked || isDead || isWon) return;
+    player.rotation.y -= e.movementX * 0.0016;
+    cameraPitchTarget = Math.max(-1.4, Math.min(1.4, cameraPitchTarget - e.movementY * 0.0016 * mouseYMultiplier));
+});
+
+document.addEventListener('keydown', e => {
+    if(!isLocked) return;
+
+    if(e.code==='KeyW')move.f=true;
+    if(e.code==='KeyS')move.b=true;
+    if(e.code==='KeyA')move.l=true;
+    if(e.code==='KeyD')move.r=true;
+    if(e.shiftKey)move.shift=true;
+
+    if(e.code==='KeyC') {
+        isCrouching = !isCrouching;
+        player.position.y = isCrouching ? crouchHeight : standHeight;
+    }
+
+    if(e.code==='KeyF') {
+        if(currentEvent === 'blackout') return;
+        flashlightOn = !flashlightOn;
+        if(!nvActive) camLight.intensity = flashlightOn ? 45 : 0;
+    }
+
+    if(e.code==='KeyN') {
+        if(battery > 0) {
+            nvActive = !nvActive; playNVClick(nvActive);
+            document.getElementById('nv-overlay').style.display = nvActive ? 'block' : 'none';
+            scene.fog.density = nvActive ? 0.01 : baseFogDensity;
+            camLight.intensity = nvActive ? 100 : (currentEvent === 'blackout' ? 0 : (flashlightOn ? 45 : 0));
+        } else if(currentEvent === 'blackout') playNVDead();
+    }
+});
+
+document.addEventListener('keyup', e => {
+    if(e.code==='KeyW')move.f=false;
+    if(e.code==='KeyS')move.b=false;
+    if(e.code==='KeyA')move.l=false;
+    if(e.code==='KeyD')move.r=false;
+    if(!e.shiftKey)move.shift=false;
+});
+
+/* ==========================
+   Death / Jumpscare
+   ========================== */
+function triggerJumpscare() {
+    if (isDead) return;
+    isDead = true;
+    playSuperScreech();
+
+    let zoomVal = 75;
+    const zoomInt = setInterval(() => {
+        zoomVal -= 2;
+        camera.fov = zoomVal;
+        camera.updateProjectionMatrix();
+        if(zoomVal <= 30) clearInterval(zoomInt);
+    }, 10);
+
+    camera.lookAt(entity.position.x, entity.position.y + 2.3, entity.position.z);
+    renderer.domElement.classList.add('canvas-glitch');
+
+    setTimeout(() => {
+        document.getElementById('retinal-burn').style.opacity = '1';
+        setTimeout(() => { document.getElementById('retinal-burn').style.opacity = '0'; }, 50);
+    }, 400);
+
+    setTimeout(() => {
+        document.exitPointerLock();
+        renderer.domElement.style.display = 'none';
+
+        const ghost = document.getElementById('ghost-overlay');
+        ghost.style.opacity = '0.6';
+        ghost.style.transform = 'translate(-50%, -50%) scale(2.5)';
+
+        document.getElementById('death-screen').style.display = 'flex';
+
+        let progress = 0;
+        const statusEl = document.getElementById('death-status');
+        const logInt = setInterval(() => {
+            progress += Math.floor(Math.random() * 7);
+            if(progress >= 100) {
+                progress = 100;
+                statusEl.innerText = "ALL LOGS PURGED. CONNECTION TERMINATED.";
+                clearInterval(logInt);
+            } else {
+                statusEl.innerText = `DELETING ENCRYPTED LOGS... ${progress}%`;
+            }
+        }, 150);
+
+        setTimeout(() => { document.getElementById('death-ui-box').style.opacity = '1'; }, 2000);
+    }, 600);
+}
+
+/* ==========================
+   Entity2 teleport local (singleplayer only)
+   ========================== */
+function triggerNonLethalJumpscare() {
+    playSuperScreech();
+    document.getElementById('sanity-glitch').style.background = 'rgba(255,255,255,0.8)';
+    showTempMessage("ANOMALY", 2000);
+
+    setTimeout(() => {
+        const flash = document.getElementById('retinal-burn');
+        flash.style.opacity = '1';
+        setTimeout(() => { flash.style.opacity = '0'; }, 120);
+
+        const dir = new THREE.Vector3().subVectors(player.position, entity.position).normalize();
+        let target = entity.position.clone().addScaledVector(dir, 50);
+        target.y = 1.7;
+
+        const box = new THREE.Box3().setFromCenterAndSize(target, new THREE.Vector3(1,2,1));
+        let blocked = false;
+        for(let c of colliders) { if(box.intersectsBox(c.box)) { blocked = true; break; } }
+
+        if(blocked) {
+            for(let k=0; k<16; k++) {
+                const a = Math.random() * Math.PI * 2;
+                target = entity.position.clone().add(new THREE.Vector3(Math.cos(a) * 50, 0, Math.sin(a) * 50));
+                target.y = 1.7;
+                box.setFromCenterAndSize(target, new THREE.Vector3(1,2,1));
+                blocked = false;
+                for(let c of colliders) { if(box.intersectsBox(c.box)) { blocked = true; break; } }
+                if(!blocked) break;
+            }
+        }
+
+        if(!blocked) player.position.copy(target);
+        else player.position.copy(getSafeSpawn(30, true));
+
+        document.getElementById('sanity-glitch').style.background = 'transparent';
+        e2Mode = 'roam';
+    }, 150);
+}
+
+/* ==========================
+   Main loop
+   ========================== */
+let lastHeartbeat = 0;
+let prevPlayerPos = new THREE.Vector3();
+let playerVel = new THREE.Vector3();
+
+/* Entity AI state (search/last-seen + hearing) */
+let eState = 'roam';
+let eLastSeenPos = new THREE.Vector3();
+let eSearchTarget = new THREE.Vector3();
+let eSearchRadius = 4;
+let eSearchTimer = 0;
+let eHesitateTimer = 0;
+let perceptionSlip = 0;
+let eHearCooldown = 0;
+let eLastTrailDir = new THREE.Vector3(1,0,0);
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    if(isDead && renderer.domElement.style.display === 'none') return;
+    if(!isLocked || isDead || isWon) { renderer.render(scene, camera); return; }
+
+    const delta = clock.getDelta();
+    const time = clock.getElapsedTime();
+    const et = Date.now() * 0.001;
+
+    document.getElementById('timer').innerText = formatTime((Date.now() - startTime - totalPausedTime) / 1000);
+
+    let extraSanityDrain = 0;
+    if(currentEvent === 'redflash') extraSanityDrain = 0.04;
+
+    sanity = Math.max(0, sanity - delta * (0.015 + extraSanityDrain) * sanityDrainMultiplier);
+    document.getElementById('sanity-val').innerText = Math.floor(sanity);
+
+    if(nvActive) {
+        battery = Math.max(0, battery - delta * 2.5 * batteryDrainMultiplier);
+        document.getElementById('battery-val').innerText = Math.floor(battery);
+        if(battery <= 0) {
+            nvActive = false;
+            playNVDead();
+            document.getElementById('nv-overlay').style.display = 'none';
+            scene.fog.density = baseFogDensity;
+            camLight.intensity = (currentEvent === 'blackout' ? 0 : (flashlightOn ? 45 : 0));
+            showTempMessage("BATTERY DEAD", 3000);
+        }
+    }
+
+    if (isExhausted) {
+        exhaustionTimer -= delta;
+        if (Math.random() > 0.985) playExhaustionGasp();
+        if (exhaustionTimer <= 0) isExhausted = false;
+    }
+
+    const isMoving = move.f || move.b || move.l || move.r;
+    const isRunning = move.shift && stamina > 0 && isMoving && !isExhausted && !isCrouching;
+
+    if (isRunning) {
+        stamina = Math.max(0, stamina - 18 * delta * staminaDrainMultiplier);
+        if (stamina <= 0) { isExhausted = true; exhaustionTimer = 3.5; showTempMessage("EXHAUSTED", 2000); }
+    } else {
+        stamina = Math.min(100, stamina + 15 * delta * staminaRecoveryMultiplier);
+    }
+
+    document.getElementById('stamina-fill').style.width = stamina + '%';
+    document.getElementById('vignette-run').style.opacity = isRunning ? "1" : "0";
+
+    let speedMult = isRunning ? 11.5 : (isExhausted ? 1.5 : 5.8);
+    if (isCrouching) speedMult = 3.2;
+    const speed = speedMult * delta;
+
+    camera.getWorldDirection(_vDir);
+    _vDir.y = 0; _vDir.normalize();
+    _vSide.crossVectors(_vDir, new THREE.Vector3(0, 1, 0));
+
+    _vNextPos.copy(player.position);
+    if(move.f) _vNextPos.addScaledVector(_vDir, speed);
+    if(move.b) _vNextPos.addScaledVector(_vDir, -speed);
+    if(move.l) _vNextPos.addScaledVector(_vSide, -speed);
+    if(move.r) _vNextPos.addScaledVector(_vSide, speed);
+
+    if (_vNextPos.x > BOUNDARY_LIMIT) _vNextPos.x = -BOUNDARY_LIMIT + 5;
+    else if (_vNextPos.x < -BOUNDARY_LIMIT) _vNextPos.x = BOUNDARY_LIMIT - 5;
+    if (_vNextPos.z > BOUNDARY_LIMIT) _vNextPos.z = -BOUNDARY_LIMIT + 5;
+    else if (_vNextPos.z < -BOUNDARY_LIMIT) _vNextPos.z = BOUNDARY_LIMIT - 5;
+
+    _boxPlayer.setFromCenterAndSize(_vNextPos, isCrouching ? _sizePlayerCrouch : _sizePlayerStand);
+
+    let hit = false;
+    const nearbyCols = queryCollidersNearWorld(_vNextPos, 2);
+    for(let i=0; i<nearbyCols.length; i++) {
+        if(_boxPlayer.intersectsBox(nearbyCols[i].box)) { hit = true; break; }
+    }
+
+    if(!hit) {
+        player.position.copy(_vNextPos);
+        if(isMoving) {
+            stepTimer += delta * (isRunning ? 15 : 9);
+            if(stepTimer > Math.PI) { playFootstep(isRunning); stepTimer = 0; }
+        }
+    }
+
+    playerVel.copy(player.position).sub(prevPlayerPos).divideScalar(Math.max(delta, 0.0001));
+    if (playerVel.lengthSq() > 0.0005) eLastTrailDir.copy(playerVel).setY(0).normalize();
+    prevPlayerPos.copy(player.position);
+
+    for(let i = almondWaters.length - 1; i >= 0; i--) {
+        const b = almondWaters[i];
+        if(player.position.distanceTo(b.position) < 1.5) {
+            const bottleId = (b.userData && Number.isFinite(b.userData.bottleId)) ? b.userData.bottleId : i;
+
+            if (isMultiplayer) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "pickup", id: bottleId }));
+                }
+            } else {
+                playCollect();
+                scene.remove(b);
+                almondWaters.splice(i, 1);
+                keysCollected++;
+                document.getElementById('keys-val').innerText = keysCollected;
+                showTempMessage("Almond Water collected.", 3000);
+                if(keysCollected === requiredWaters) {
+                    const s = getSafeSpawn(50, true);
+                    spawnElevatorAt(s.x, s.z);
+                    showTempMessage("Exit revealed.", 15000);
+                }
+            }
+        }
+        b.rotation.y += delta * 3;
+        b.position.y = 0.5 + Math.sin(time * 2) * 0.1;
+    }
+
+    if(elevator && player.position.distanceTo(elevator.position) < 2.0) {
+        if (!isMultiplayer) {
+            isWon = true;
+            document.getElementById('final-time-display').innerText = `TIME: ${formatTime((Date.now() - startTime - totalPausedTime) / 1000)}`;
+            document.exitPointerLock();
+            document.getElementById('win-screen').style.display = 'flex';
+        }
+    }
+
+    const distToE1 = player.position.distanceTo(entity.position);
+    const shakeIntensity = Math.max(0, (15 - distToE1) / 15);
+
+    if (time - lastHeartbeat > Math.max(0.15, distToE1 / 25)) {
+        playHeartbeat(shakeIntensity + 0.1);
+        lastHeartbeat = time;
+    }
+
+    let bob = isRunning ? 0.18 : (isExhausted ? 0.25 : 0.09);
+    if(isMoving || shakeIntensity > 0.1 || isExhausted) {
+        camera.position.y = (Math.sin(time * (isExhausted?4:(isRunning?16:9))) * bob) + (Math.random() * shakeIntensity * 0.15);
+        camera.position.x = (Math.cos(time * 4.5) * (bob/1.5));
+    }
+
+    /* ====== Singleplayer AI ====== */
+    if (!isMultiplayer) {
+        let hasLOS = false;
+
+        /* --- 2D DDA LOS (replaces raycaster LOS) --- */
+        hasLOS = hasLineOfSight2D(entity.position, player.position);
+
+        // “hearing”: sprinting emits “trail pings” that refresh last seen (rarely)
+        eHearCooldown -= delta;
+        if (!hasLOS && isRunning && distToE1 < 38 && eHearCooldown <= 0) {
+            if (Math.random() < 0.22) { // not always: keeps it eerie + imperfect
+                eLastSeenPos.copy(player.position);
+                eState = 'investigate';
+                eSearchTarget.copy(eLastSeenPos).addScaledVector(eLastTrailDir, 7 + Math.random() * 9);
+                eSearchTimer = 8 + Math.random() * 6;
+                eSearchRadius = 6;
+            }
+            eHearCooldown = 4.5 + Math.random() * 6.5;
+        }
+
+        if (hasLOS) {
+            eLastSeenPos.copy(player.position);
+            eState = 'chase';
+            eSearchTimer = 0;
+            eSearchRadius = 4;
+        } else if (eState === 'chase') {
+            eState = 'search';
+            eSearchTarget.copy(eLastSeenPos);
+            eSearchTimer = 10;
+            eSearchRadius = 4;
+        }
+
+        // Rare hesitation
+        eHesitateTimer -= delta;
+        if (eHesitateTimer <= 0 && Math.random() < 0.0012) {
+            eHesitateTimer = 0.35 + Math.random() * 0.7;
+        }
+
+        let eMoveSpeed = ((hasLOS || currentEvent === 'blackout' ? 6.5 : (distToE1 < 20 ? 3.5 : 2.2)) * entitySpeedMultiplier) * delta;
+        if (eState === 'search') eMoveSpeed = (3.8 * entitySpeedMultiplier) * delta;
+        if (eState === 'investigate') eMoveSpeed = (4.2 * entitySpeedMultiplier) * delta;
+        if (eHesitateTimer > 0) eMoveSpeed = 0;
+
+        const targetPos =
+            (eState === 'search') ? eSearchTarget :
+            (eState === 'investigate') ? eSearchTarget :
+            (currentEvent === 'blackout' || hasLOS) ? player.position : roamTarget;
+
+        _vTmpA.subVectors(targetPos, entity.position).normalize();
+
+        _vTmpB.copy(entity.position).addScaledVector(_vTmpA, eMoveSpeed);
+        _boxEntity.setFromCenterAndSize(_vTmpB, _sizeEntity);
+
+        let eHit = false;
+        const nearbyECols = queryCollidersNearWorld(_vTmpB, 2);
+        for(let i=0; i<nearbyECols.length; i++) { if(_boxEntity.intersectsBox(nearbyECols[i].box)) { eHit = true; break; } }
+
+        if (eHit) {
+            _vTmpC.set(-_vTmpA.z, 0, _vTmpA.x).normalize();
+            _vSide.set(_vTmpA.z, 0, -_vTmpA.x).normalize();
+
+            _vNextPos.copy(entity.position).addScaledVector(_vTmpC, eMoveSpeed);
+            _vTmpB.copy(entity.position).addScaledVector(_vSide, eMoveSpeed);
+
+            _boxTmpA.setFromCenterAndSize(_vNextPos, _sizeEntity);
+            _boxTmpB.setFromCenterAndSize(_vTmpB, _sizeEntity);
+
+            let eHitA = false;
+            let eHitB = false;
+
+            const nearA = queryCollidersNearWorld(_vNextPos, 2);
+            for(let i=0; i<nearA.length; i++) { if(_boxTmpA.intersectsBox(nearA[i].box)) { eHitA = true; break; } }
+
+            const nearB = queryCollidersNearWorld(_vTmpB, 2);
+            for(let i=0; i<nearB.length; i++) { if(_boxTmpB.intersectsBox(nearB[i].box)) { eHitB = true; break; } }
+
+            if (!eHitA) entity.position.copy(_vNextPos);
+            else if (!eHitB) entity.position.copy(_vTmpB);
+            else {
+                // when fully stuck, widen the roam target slightly
+                roamTarget.copy(getSafeSpawn(20, true));
+                if (Math.random() < 0.35) eState = 'search';
+            }
+        } else {
+            entity.position.copy(_vTmpB);
+        }
+
+        // Search/investigate behavior:
+        if (eState === 'search' || eState === 'investigate') {
+            eSearchTimer -= delta;
+
+            const closeEnough = entity.position.distanceTo(eSearchTarget) < 2.0;
+            if (closeEnough || eSearchTimer <= 0) {
+                const angle = Math.random() * Math.PI * 2;
+
+                // “attempts to follow”: bias search forward along last-known movement direction
+                const bias = (eState === 'investigate') ? 0.65 : 0.35;
+                const forward = eLastTrailDir.clone().multiplyScalar((6 + Math.random() * 10) * bias);
+                const r = eSearchRadius + Math.random() * eSearchRadius;
+
+                eSearchTarget.copy(eLastSeenPos)
+                    .add(forward)
+                    .add(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
+
+                eSearchRadius = Math.min(26, eSearchRadius + (eState === 'investigate' ? 4.0 : 3.5));
+                eSearchTimer = 6 + Math.random() * 6;
+
+                // Occasionally give up and roam
+                if (Math.random() < 0.10) {
+                    eState = 'roam';
+                    roamTarget.copy(getSafeSpawn(20, true));
+                }
+            }
+        }
+
+        entity.lookAt(targetPos.x, 1.6, targetPos.z);
+
+        // Entity2
+        projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        frustum.setFromProjectionMatrix(projScreenMatrix);
+        const isSeen = frustum.containsPoint(entity2.position) && currentEvent !== 'redflash';
+        const dist2 = player.position.distanceTo(entity2.position);
+
+        if (!isSeen || e2ForceChase) {
+            if (Math.random() < 0.001 || e2ForceChase) e2Mode = (dist2 < 60 || e2ForceChase) ? 'stalk' : 'roam';
+
+            const e2Dir = new THREE.Vector3();
+            if (e2Mode === 'stalk' || e2ForceChase) e2Dir.subVectors(player.position, entity2.position).normalize();
+            else {
+                e2Dir.subVectors(e2RoamTarget, entity2.position).normalize();
+                if(entity2.position.distanceTo(e2RoamTarget) < 5) e2RoamTarget.copy(getSafeSpawn(20, true));
+            }
+            entity2.position.addScaledVector(e2Dir, (e2Mode === 'stalk' || e2ForceChase ? 10 : 4.5) * delta);
+        }
+
+        if (e2Mode === 'stalk' && dist2 < 3.0 && Math.random() < 0.05) triggerNonLethalJumpscare();
+        if (dist2 < 3.0 && currentEvent === 'redflash') triggerNonLethalJumpscare();
+
+        // Death check (singleplayer)
+        if (distToE1 < 1.35) triggerJumpscare();
+    } else {
+        // Multiplayer: show other players
+        syncRemotePlayers();
+    }
+
+    /* ====== Visual animations ====== */
+    headGroup.rotation.z = Math.sin(time * 10) * 0.06;
+    armR.root.rotation.z = 0.25 + Math.sin(time * 3.2) * 0.08;
+    armL.root.rotation.z = -0.25 - Math.sin(time * 3.2) * 0.08;
+    armR.upper.rotation.x = Math.sin(time * 2.7) * 0.14;
+    armL.upper.rotation.x = -Math.sin(time * 2.7) * 0.14;
+
+    legR.upper.rotation.x = Math.sin(time * 3.4) * 0.10;
+    legL.upper.rotation.x = -Math.sin(time * 3.4) * 0.10;
+
+    rings[0].rotation.x += 0.02; rings[0].rotation.y += 0.01;
+    rings[1].rotation.y -= 0.03; rings[1].rotation.z += 0.01;
+    rings[2].rotation.z += 0.04; rings[2].rotation.x -= 0.02;
+
+    shards.forEach((s, i) => {
+        const angle = (i / shards.length) * Math.PI * 2 + et;
+        s.position.x = Math.cos(angle) * 1.5;
+        s.position.z = Math.sin(angle) * 1.5;
+        s.position.y = 1.7 + Math.sin(et * 2 + i) * 0.5;
+        s.lookAt(entity2.position.x, 1.7, entity2.position.z);
+    });
+
+    entity2.position.y = 1.7 + Math.sin(et) * 0.5;
+    core.scale.setScalar(1 + Math.sin(et * 10) * 0.1);
+
+    if(entityGain) entityGain.gain.value = Math.max(0, 0.1 - (distToE1 / 40));
+
+    if(distToE1 < 10) {
+        document.getElementById('sanity-glitch').style.background = `rgba(255, 255, 255, ${Math.random() * shakeIntensity * 0.3})`;
+    } else {
+        document.getElementById('sanity-glitch').style.background = 'transparent';
+    }
+
+    flickerLights.forEach(l => { if(Math.random() > 0.99) l.intensity = Math.random() * 4; });
+
+    if (isNightmare) {
+        invertTimer -= delta;
+        if (invertTimer <= 0) {
+            controlInvert = !controlInvert;
+            mouseYMultiplier = controlInvert ? -1 : 1;
+            playInvertGlitch();
+            renderer.domElement.classList.add('canvas-glitch');
+            setTimeout(() => renderer.domElement.classList.remove('canvas-glitch'), 400);
+
+            invertTimer = 40 + Math.random() * 80;
+            const duration = 4 + Math.random() * 6;
+            setTimeout(() => {
+                if (controlInvert) { controlInvert = false; mouseYMultiplier = 1; }
+            }, duration * 1000);
+            invertTimer += duration;
+        }
+
+        glitchTimer -= delta;
+        if (glitchTimer <= 0) {
+            renderer.domElement.classList.add('canvas-glitch');
+            document.getElementById('sanity-glitch').style.background = 'rgba(255,255,255,0.8)';
+            playInvertGlitch();
+            setTimeout(() => {
+                renderer.domElement.classList.remove('canvas-glitch');
+                document.getElementById('sanity-glitch').style.background = 'transparent';
+            }, 400);
+            glitchTimer = 30 + Math.random() * 60;
+        }
+    }
+
+    if (Math.random() < 0.001 && sanity < 55) perceptionSlip = 0.03 + Math.random() * 0.05;
+    perceptionSlip = Math.max(0, perceptionSlip - delta * 0.2);
+
+    const stressSmooth = (isExhausted ? 0.06 : (sanity < 40 ? 0.04 : 0.085));
+    camera.rotation.x += (cameraPitchTarget - camera.rotation.x) * stressSmooth;
+    camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x + (Math.random() * perceptionSlip - perceptionSlip * 0.5)));
+
+    // Eye adaptation: local brightness estimate
+    let localLight = 0;
+    for(let i=0; i<flickerLights.length; i++) {
+        const l = flickerLights[i];
+        const d = l.position.distanceTo(player.position);
+        if (d < 28) localLight += (l.intensity / (1 + d * 0.35));
+    }
+    if (nvActive) localLight += 20;
+    localLight += (camLight.intensity * 0.02);
+
+    let adaptAlpha;
+    if (currentEvent === 'blackout') adaptAlpha = 0.62;
+    else adaptAlpha = 0.36 - (localLight * 0.022);
+
+    const minAlpha = 0.06;
+    const maxAlpha = (currentEvent === 'blackout') ? 0.62 : 0.38;
+    adaptAlpha = Math.max(minAlpha, Math.min(maxAlpha, adaptAlpha));
+    document.getElementById('eye-adapt').style.background = `rgba(0,0,0,${adaptAlpha})`;
+
+    // Dust dynamics (completed)
+    if (dustPoints && dustGeo && dustPos && dustVel) {
+        dustPhase ^= 1;
+
+        const windX = -playerVel.x * 0.0025;
+        const windZ = -playerVel.z * 0.0025;
+        const turbulence = (isRunning ? 1.0 : (isMoving ? 0.45 : 0.18));
+        const upDrift = (currentEvent === 'blackout' ? 0.02 : 0.012);
+
+        const rr = dustRadius * dustRadius;
+        const rrKill = (dustRadius * 2.4) * (dustRadius * 2.4);
+
+        for(let i=dustPhase; i<dustCount; i+=2) {
+            const ix = i*3;
+
+            dustVel[ix+0] += (windX + randSigned() * 0.01 * turbulence) * delta;
+            dustVel[ix+1] += (upDrift + randSigned() * 0.006) * delta;
+            dustVel[ix+2] += (windZ + randSigned() * 0.01 * turbulence) * delta;
+
+            dustVel[ix+0] *= 0.985;
+            dustVel[ix+1] *= 0.985;
+            dustVel[ix+2] *= 0.985;
+
+            dustPos[ix+0] += dustVel[ix+0];
+            dustPos[ix+1] += dustVel[ix+1];
+            dustPos[ix+2] += dustVel[ix+2];
+
+            const dx = dustPos[ix+0] - player.position.x;
+            const dz = dustPos[ix+2] - player.position.z;
+            const dd = dx*dx + dz*dz;
+
+            // keep them in a “cloud” around player
+            if (dd > rrKill || dustPos[ix+1] < 0.1 || dustPos[ix+1] > 4.2) {
+                spawnDustParticle(i);
+                continue;
+            }
+
+            // softly pull back toward player center if drifting too far
+            if (dd > rr) {
+                dustPos[ix+0] += (-dx) * delta * 0.18;
+                dustPos[ix+2] += (-dz) * delta * 0.18;
+            }
+        }
+
+        if (!animate._dustUpdateToggle) animate._dustUpdateToggle = 0;
+        animate._dustUpdateToggle ^= 1;
+        if (animate._dustUpdateToggle) dustGeo.attributes.position.needsUpdate = true;
+    }
+
+    // Ambient illusion sounds
+    updateIllusions(delta, isRunning);
+
+    // Multiplayer: send my player transform (lightweight)
+    if (isMultiplayer && ws && ws.readyState === WebSocket.OPEN) {
+        if (!animate._netTimer) animate._netTimer = 0;
+        animate._netTimer -= delta;
+        if (animate._netTimer <= 0) {
+            ws.send(JSON.stringify({
+                type: "player",
+                x: player.position.x,
+                y: player.position.y,
+                z: player.position.z,
+                yaw: player.rotation.y,
+                crouch: isCrouching ? 1 : 0
+            }));
+            animate._netTimer = 0.08; // ~12.5 Hz
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+animate();
+
+// Ensure glitchedColorInterval cleared on unload to avoid leaks in some environments
+window.addEventListener('unload', () => {
+    if (glitchedColorInterval) { clearInterval(glitchedColorInterval); glitchedColorInterval = null; }
+    // also ensure websocket reconnects/intervals are stopped on unload
+    try { stopReconnecting(); } catch(e) {}
+});
+</script>
 </body>
 </html>
