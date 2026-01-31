@@ -9,7 +9,7 @@ projects:
       name: BackroomsVisualscape
       runtime: static
       repo: https://github.com/damianvarela12345-ai/Backrooms
-      staticPublishPath: .
+      staticPublishPath: build
       autoDeployTrigger: commit
 
     - type: web
