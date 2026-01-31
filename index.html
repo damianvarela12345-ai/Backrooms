@@ -986,6 +986,8 @@ document.getElementById('multiplayer-btn').onclick = () => {
     mpMenu.style.display = 'flex';
 };
 document.getElementById('mp-back').onclick = () => {
+    // stop reconnect attempts when user navigates back
+    stopReconnecting();
     mpMenu.style.display = 'none';
     document.getElementById('blocker').style.display = 'flex';
 };
@@ -1132,160 +1134,234 @@ function wsUrl() {
     return `${proto}//${location.host}`;
 }
 
-function startMultiplayer(roomCode, mode, waters) {
-    isMultiplayer = true;
+// WebSocket resilient manager: reconnect/backoff, ping/pong keepalive, and message validation
+let wsReconnectAttempts = 0;
+let wsMaxReconnectAttempts = 10;
+let wsShouldReconnect = false;
+let wsReconnectTimer = null;
+let wsPingInterval = null;
+let wsLastPong = 0;
+let lastJoinParams = null;
 
+function stopReconnecting() {
+    wsShouldReconnect = false;
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
     if (ws) { try { ws.close(); } catch(e) {} ws = null; }
-    ws = new WebSocket(wsUrl());
+    if (wsPingInterval) { clearInterval(wsPingInterval); wsPingInterval = null; }
+    mpStatus.textContent = "Disconnected.";
+}
+
+function handleWsMessage(msg) {
+    if (!msg || typeof msg.type !== 'string') return;
+
+    if (msg.type === "pong") {
+        wsLastPong = Date.now();
+        return;
+    }
+
+    if (msg.type === "hello") {
+        if (Number.isFinite(msg.clientId)) myClientId = msg.clientId;
+        return;
+    }
+
+    if (msg.type === "init") {
+        if (typeof msg.roomId === 'string') mpRoomId = msg.roomId;
+        if (Number.isFinite(msg.seed)) mpSeed = msg.seed >>> 0;
+        if (Number.isFinite(msg.requiredWaters)) requiredWaters = msg.requiredWaters;
+        if (typeof msg.anomalousChance === 'number') anomalousChance = msg.anomalousChance;
+        if (typeof msg.entitySpeedMultiplier === 'number') entitySpeedMultiplier = msg.entitySpeedMultiplier;
+        isNightmare = (msg.mode === "nightmare");
+        document.getElementById('nightmare-tint').style.display = isNightmare ? 'block' : 'none';
+
+        mpKeysCollected = msg.keysCollected || 0;
+        keysCollected = mpKeysCollected;
+
+        currentEvent = msg.currentEvent || null;
+        serverEventEndsAt = msg.eventEndsAt || 0;
+        mpServerNowOffset = (msg.serverNow || Date.now()) - Date.now();
+
+        mpBottlesTaken.clear();
+        if (Array.isArray(msg.bottles)) {
+            msg.bottles.forEach(b => { if (b && b.id != null && b.taken) mpBottlesTaken.add(b.id); });
+        }
+
+        elevator = null;
+        if (msg.elevator && Number.isFinite(msg.elevator.x)) {
+            spawnElevatorAt(msg.elevator.x, msg.elevator.z);
+        }
+
+        if (msg.spawn && Number.isFinite(msg.spawn.x) && Number.isFinite(msg.spawn.z)) {
+            player.position.set(msg.spawn.x, msg.spawn.y || 1.7, msg.spawn.z);
+        }
+
+        mpStatus.textContent = `In room ${mpRoomId}. Seed locked.`;
+        mpMenu.style.display = 'none';
+
+        startGame(true, msg.bottles || []);
+        return;
+    }
+
+    if (msg.type === "players") {
+        if (!Array.isArray(msg.players)) return;
+        msg.players.forEach(p => {
+            if (!p || !p.id) return;
+            if (p.id === myClientId) return;
+            mpPlayers.set(p.id, p);
+        });
+        return;
+    }
+
+    if (msg.type === "entities") {
+        if (msg.e1) { mpEntity1 = msg.e1; entity.position.set(msg.e1.x, msg.e1.y || 1, msg.e1.z); }
+        if (msg.e2) { mpEntity2 = msg.e2; entity2.position.set(msg.e2.x, msg.e2.y || 1.7, msg.e2.z); }
+        if (msg.event !== undefined) currentEvent = msg.event;
+        if (msg.eventEndsAt) serverEventEndsAt = msg.eventEndsAt;
+        if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
+        return;
+    }
+
+    if (msg.type === "event") {
+        if (msg.phase === "start") {
+            currentEvent = msg.event;
+            serverEventEndsAt = msg.endsAt || 0;
+            if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
+            applyEventStart(currentEvent);
+        } else if (msg.phase === "end") {
+            if (msg.event === currentEvent) {
+                applyEventEnd(currentEvent);
+                currentEvent = null;
+                serverEventEndsAt = 0;
+            } else {
+                applyEventEnd(msg.event);
+            }
+            if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
+        }
+        return;
+    }
+
+    if (msg.type === "pickup") {
+        if (msg.id == null) return;
+        mpBottlesTaken.add(msg.id);
+        keysCollected = msg.keysCollected || keysCollected;
+        mpKeysCollected = keysCollected;
+        document.getElementById('keys-val').innerText = keysCollected;
+        if (msg.requiredWaters) document.getElementById('required-val').innerText = msg.requiredWaters;
+
+        for (let i = almondWaters.length - 1; i >= 0; i--) {
+            const b = almondWaters[i];
+            if (b.userData && b.userData.bottleId === msg.id) {
+                scene.remove(b);
+                almondWaters.splice(i, 1);
+                break;
+            }
+        }
+        showTempMessage("Almond Water collected.", 2500);
+        return;
+    }
+
+    if (msg.type === "elevator" && msg.spawn) {
+        spawnElevatorAt(msg.x, msg.z);
+        showTempMessage("Exit revealed.", 12000);
+        return;
+    }
+
+    if (msg.type === "teleport") {
+        if (msg.playerId === myClientId) {
+            player.position.x = msg.x;
+            player.position.z = msg.z;
+            const flash = document.getElementById('retinal-burn');
+            flash.style.opacity = '1';
+            setTimeout(() => { flash.style.opacity = '0'; }, 90);
+        }
+        return;
+    }
+
+    if (msg.type === "death") {
+        if (msg.playerId === myClientId && !isDead) {
+            triggerJumpscare();
+        }
+        return;
+    }
+
+    if (msg.type === "win") {
+        if (!isWon) {
+            isWon = true;
+            document.getElementById('final-time-display').innerText = `TIME: ${formatTime((Date.now() - startTime - totalPausedTime) / 1000)}`;
+            document.exitPointerLock();
+            document.getElementById('win-screen').style.display = 'flex';
+        }
+        return;
+    }
+}
+
+function scheduleReconnect() {
+    if (!wsShouldReconnect) return;
+    wsReconnectAttempts++;
+    if (wsReconnectAttempts > wsMaxReconnectAttempts) {
+        mpStatus.textContent = "Unable to reconnect to server.";
+        return;
+    }
+    const backoff = Math.min(30000, Math.pow(1.6, wsReconnectAttempts) * 500 + Math.random() * 2000);
+    mpStatus.textContent = `Reconnecting in ${Math.round(backoff/1000)}s... (attempt ${wsReconnectAttempts})`;
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(() => {
+        connectWebSocket(lastJoinParams.roomCode, lastJoinParams.mode, lastJoinParams.waters);
+    }, backoff);
+}
+
+function connectWebSocket(roomCode, mode, waters) {
+    // store params for automatic rejoin
+    lastJoinParams = { roomCode, mode, waters };
+    if (ws) { try { ws.close(); } catch(e) {} ws = null; }
+
+    try {
+        ws = new WebSocket(wsUrl());
+    } catch (e) {
+        mpStatus.textContent = "WebSocket creation failed.";
+        scheduleReconnect();
+        return;
+    }
 
     ws.onopen = () => {
+        wsReconnectAttempts = 0;
         mpStatus.textContent = "Connected. Joining room...";
         ws.send(JSON.stringify({ type: "join", roomCode, mode, waters }));
+
+        // start ping/pong keepalive
+        wsLastPong = Date.now();
+        if (wsPingInterval) clearInterval(wsPingInterval);
+        wsPingInterval = setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            try { ws.send(JSON.stringify({ type: 'ping' })); } catch(e) {}
+            if (Date.now() - wsLastPong > 30000) {
+                // no pong recently, force reconnect
+                try { ws.close(); } catch(e) {}
+            }
+        }, 20000);
     };
 
     ws.onmessage = (ev) => {
         let msg;
-        try { msg = JSON.parse(ev.data); } catch(e) { return; }
-
-        if (msg.type === "hello") {
-            myClientId = msg.clientId;
-            return;
-        }
-
-        if (msg.type === "init") {
-            mpRoomId = msg.roomId;
-            mpSeed = msg.seed >>> 0;
-            requiredWaters = msg.requiredWaters;
-            anomalousChance = msg.anomalousChance;
-            entitySpeedMultiplier = msg.entitySpeedMultiplier;
-            isNightmare = (msg.mode === "nightmare");
-            document.getElementById('nightmare-tint').style.display = isNightmare ? 'block' : 'none';
-
-            mpKeysCollected = msg.keysCollected || 0;
-            keysCollected = mpKeysCollected;
-
-            currentEvent = msg.currentEvent || null;
-            serverEventEndsAt = msg.eventEndsAt || 0;
-            mpServerNowOffset = (msg.serverNow || Date.now()) - Date.now();
-
-            mpBottlesTaken.clear();
-            if (Array.isArray(msg.bottles)) {
-                msg.bottles.forEach(b => { if (b.taken) mpBottlesTaken.add(b.id); });
-            }
-
-            elevator = null;
-            if (msg.elevator && msg.elevator.x != null) {
-                spawnElevatorAt(msg.elevator.x, msg.elevator.z);
-            }
-
-            if (msg.spawn) {
-                player.position.set(msg.spawn.x, msg.spawn.y || 1.7, msg.spawn.z);
-            }
-
-            mpStatus.textContent = `In room ${mpRoomId}. Seed locked.`;
-            mpMenu.style.display = 'none';
-
-            startGame(true, msg.bottles || []);
-            return;
-        }
-
-        if (msg.type === "players") {
-            if (!msg.players) return;
-            msg.players.forEach(p => {
-                if (!p || !p.id) return;
-                if (p.id === myClientId) return;
-                mpPlayers.set(p.id, p);
-            });
-            return;
-        }
-
-        if (msg.type === "entities") {
-            if (msg.e1) { mpEntity1 = msg.e1; entity.position.set(msg.e1.x, msg.e1.y || 1, msg.e1.z); }
-            if (msg.e2) { mpEntity2 = msg.e2; entity2.position.set(msg.e2.x, msg.e2.y || 1.7, msg.e2.z); }
-            if (msg.event !== undefined) currentEvent = msg.event;
-            if (msg.eventEndsAt) serverEventEndsAt = msg.eventEndsAt;
-            if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
-            return;
-        }
-
-        if (msg.type === "event") {
-            if (msg.phase === "start") {
-                currentEvent = msg.event;
-                serverEventEndsAt = msg.endsAt || 0;
-                if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
-                applyEventStart(currentEvent);
-            } else if (msg.phase === "end") {
-                if (msg.event === currentEvent) {
-                    applyEventEnd(currentEvent);
-                    currentEvent = null;
-                    serverEventEndsAt = 0;
-                } else {
-                    applyEventEnd(msg.event);
-                }
-                if (msg.serverNow) mpServerNowOffset = msg.serverNow - Date.now();
-            }
-            return;
-        }
-
-        if (msg.type === "pickup") {
-            mpBottlesTaken.add(msg.id);
-            keysCollected = msg.keysCollected || keysCollected;
-            mpKeysCollected = keysCollected;
-            document.getElementById('keys-val').innerText = keysCollected;
-            if (msg.requiredWaters) document.getElementById('required-val').innerText = msg.requiredWaters;
-
-            for (let i = almondWaters.length - 1; i >= 0; i--) {
-                const b = almondWaters[i];
-                if (b.userData && b.userData.bottleId === msg.id) {
-                    scene.remove(b);
-                    almondWaters.splice(i, 1);
-                    break;
-                }
-            }
-            showTempMessage("Almond Water collected.", 2500);
-            return;
-        }
-
-        if (msg.type === "elevator" && msg.spawn) {
-            spawnElevatorAt(msg.x, msg.z);
-            showTempMessage("Exit revealed.", 12000);
-            return;
-        }
-
-        if (msg.type === "teleport") {
-            if (msg.playerId === myClientId) {
-                player.position.x = msg.x;
-                player.position.z = msg.z;
-                const flash = document.getElementById('retinal-burn');
-                flash.style.opacity = '1';
-                setTimeout(() => { flash.style.opacity = '0'; }, 90);
-            }
-            return;
-        }
-
-        if (msg.type === "death") {
-            if (msg.playerId === myClientId && !isDead) {
-                triggerJumpscare();
-            }
-            return;
-        }
-
-        if (msg.type === "win") {
-            if (!isWon) {
-                isWon = true;
-                document.getElementById('final-time-display').innerText = `TIME: ${formatTime((Date.now() - startTime - totalPausedTime) / 1000)}`;
-                document.exitPointerLock();
-                document.getElementById('win-screen').style.display = 'flex';
-            }
-            return;
-        }
+        try { msg = JSON.parse(ev.data); } catch(e) { console.warn('Invalid WS payload', e); return; }
+        handleWsMessage(msg);
     };
 
-    ws.onerror = () => { mpStatus.textContent = "WebSocket error. Check server."; };
+    ws.onerror = () => { mpStatus.textContent = "WebSocket error. Will attempt to reconnect."; };
+
     ws.onclose = () => {
+        if (wsPingInterval) { clearInterval(wsPingInterval); wsPingInterval = null; }
         if (!gameStarted) mpStatus.textContent = "Disconnected.";
-        // leave room state intact, allow reconnect by user
+        if (wsShouldReconnect) scheduleReconnect();
     };
+}
+
+function startMultiplayer(roomCode, mode, waters) {
+    isMultiplayer = true;
+    wsShouldReconnect = true;
+    wsReconnectAttempts = 0;
+    // store last join params and connect
+    lastJoinParams = { roomCode, mode, waters };
+    connectWebSocket(roomCode, mode, waters);
 }
 
 /* ==========================
@@ -2393,6 +2469,8 @@ animate();
 // Ensure glitchedColorInterval cleared on unload to avoid leaks in some environments
 window.addEventListener('unload', () => {
     if (glitchedColorInterval) { clearInterval(glitchedColorInterval); glitchedColorInterval = null; }
+    // also ensure websocket reconnects/intervals are stopped on unload
+    try { stopReconnecting(); } catch(e) {}
 });
 </script>
 </body>
